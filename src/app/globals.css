@@ -78,7 +78,7 @@ button, input, textarea { font: inherit; }
 .editor-workspace { max-width:1500px; min-height:680px; display:grid; grid-template-columns:minmax(0,1.2fr) minmax(460px,.8fr); margin:auto; overflow:hidden; border:1px solid var(--border); border-radius:14px; background:#101116; }
 .preview-pane { padding:30px; border-right:1px solid var(--border); background:#0b0c10; }
 .player-wrap { position:relative; overflow:hidden; aspect-ratio:16/9; display:grid; place-items:center; border-radius:9px; background:black; }.player-wrap video{width:100%;height:100%;}.player-placeholder{color:#555;font-size:13px;}
-.live-caption { position:absolute; left:50%; bottom:13%; translate:-50%; max-width:85%; padding:7px 10px; color:white; background:rgba(0,0,0,.82); font-size:clamp(14px,2vw,23px); font-weight:700; text-align:center; }
+.live-caption { position:absolute; left:50%; bottom:13%; translate:-50%; max-width:85%; padding:7px 10px; pointer-events:none; color:white; background:rgba(0,0,0,.82); font-size:clamp(14px,2vw,23px); font-weight:700; text-align:center; }
 .preview-help { color:#686a74; font-size:12px; }
 .cue-pane { max-height:680px; overflow:auto; }.cue-head { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--border); background:#14151b; font-size:12px; }.cue-head span{color:#8f72df;}
 .cue-row { display:grid; grid-template-columns:24px 160px 1fr; gap:11px; padding:15px 16px; border-bottom:1px solid rgba(255,255,255,.06); cursor:pointer; }.cue-row.active{background:rgba(139,92,246,.09);box-shadow:inset 2px 0 #8b5cf6;}
