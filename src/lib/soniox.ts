@@ -2,10 +2,12 @@ const DEFAULT_BASE_URL = "https://api.soniox.com/v1";
 
 export type SonioxToken = {
   text: string;
-  start_ms: number;
-  end_ms: number;
-  confidence: number;
+  start_ms?: number;
+  end_ms?: number;
+  confidence?: number;
   language?: string | null;
+  source_language?: string | null;
+  translation_status?: "none" | "original" | "translation";
   is_audio_event?: boolean | null;
 };
 
@@ -49,14 +51,15 @@ export async function uploadSonioxFile(buffer: Buffer, filename: string) {
   return sonioxFetch<SonioxFile>("/files", { method: "POST", body: form });
 }
 
-export async function createSonioxTranscription(fileId: string, clientReferenceId: string) {
+export async function createSonioxTranscription(fileId: string, clientReferenceId: string, targetLanguage?: string | null) {
   return sonioxFetch<SonioxTranscription>("/transcriptions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.SONIOX_TRANSCRIPTION_MODEL ?? "stt-async-v4",
+      model: process.env.SONIOX_TRANSCRIPTION_MODEL ?? "stt-async-v5",
       file_id: fileId,
       enable_language_identification: true,
+      ...(targetLanguage ? { translation: { type: "one_way", target_language: targetLanguage } } : {}),
       client_reference_id: clientReferenceId,
     }),
   });
@@ -86,7 +89,8 @@ export async function deleteSonioxFile(id: string) {
 }
 
 export function tokensToSubtitleCues(tokens: SonioxToken[]) {
-  const spoken = tokens.filter((token) => !token.is_audio_event && token.text.trim() && token.end_ms > token.start_ms);
+  const spoken = tokens.filter((token) => !token.is_audio_event && token.translation_status !== "translation"
+    && token.text.trim() && typeof token.start_ms === "number" && typeof token.end_ms === "number" && token.end_ms > token.start_ms);
   const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string }> = [];
   let group: SonioxToken[] = [];
 
@@ -94,8 +98,8 @@ export function tokensToSubtitleCues(tokens: SonioxToken[]) {
     if (!group.length) return;
     cues.push({
       cue_index: cues.length,
-      start_ms: group[0].start_ms,
-      end_ms: Math.max(group[0].start_ms + 1, group.at(-1)!.end_ms),
+      start_ms: group[0].start_ms!,
+      end_ms: Math.max(group[0].start_ms! + 1, group.at(-1)!.end_ms!),
       text: group.map((token) => token.text).join("").trim(),
     });
     group = [];
@@ -104,9 +108,41 @@ export function tokensToSubtitleCues(tokens: SonioxToken[]) {
   for (const token of spoken) {
     group.push(token);
     const text = group.map((item) => item.text).join("").trim();
-    const duration = token.end_ms - group[0].start_ms;
+    const duration = token.end_ms! - group[0].start_ms!;
     const sentenceEnd = /[.!?][”"']?$/.test(text);
     if (duration >= 4_000 || text.length >= 72 || (duration >= 1_500 && sentenceEnd)) flush();
+  }
+  flush();
+  return cues;
+}
+
+export function tokensToBilingualCues(tokens: SonioxToken[]) {
+  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; translated_text: string }> = [];
+  let original: SonioxToken[] = [];
+  let translation: SonioxToken[] = [];
+
+  const flush = () => {
+    if (!original.length) return;
+    const translatedText = translation.map((token) => token.text).join("").trim();
+    if (translatedText) cues.push({
+      cue_index: cues.length,
+      start_ms: original[0].start_ms!,
+      end_ms: Math.max(original[0].start_ms! + 1, original.at(-1)!.end_ms!),
+      text: original.map((token) => token.text).join("").trim(),
+      translated_text: translatedText,
+    });
+    original = [];
+    translation = [];
+  };
+
+  for (const token of tokens) {
+    if (token.translation_status === "translation") {
+      translation.push(token);
+      continue;
+    }
+    if (translation.length) flush();
+    if (!token.is_audio_event && token.text.trim() && typeof token.start_ms === "number"
+      && typeof token.end_ms === "number" && token.end_ms > token.start_ms) original.push(token);
   }
   flush();
   return cues;
@@ -115,7 +151,7 @@ export function tokensToSubtitleCues(tokens: SonioxToken[]) {
 export function detectTranscriptLanguage(tokens: SonioxToken[]) {
   const counts = new Map<string, number>();
   for (const token of tokens) {
-    if (token.language) counts.set(token.language, (counts.get(token.language) ?? 0) + 1);
+    if (token.translation_status !== "translation" && token.language) counts.set(token.language, (counts.get(token.language) ?? 0) + 1);
   }
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }

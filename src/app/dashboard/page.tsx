@@ -5,6 +5,7 @@ import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { createBrowserSupabase } from "@/lib/supabase";
+import { TRANSLATION_LANGUAGES, type TranslationLanguage } from "@/lib/subtitles";
 
 type Video = { id: string; file_name: string; file_size: number; status: string; error_message?: string; language?: string; created_at: string };
 
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [targetLanguage, setTargetLanguage] = useState<TranslationLanguage | "">("");
 
   const loadVideos = useCallback(async () => {
     try {
@@ -37,7 +39,7 @@ export default function DashboardPage() {
     if (!file) return;
     setBusy(true); setStatus("Preparing secure upload…");
     try {
-      const init = await authFetch("/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: file.name, fileSize: file.size, contentType: file.type }) });
+      const init = await authFetch("/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: file.name, fileSize: file.size, contentType: file.type, targetLanguage: targetLanguage || null }) });
       const job = await init.json();
       if (!init.ok) throw new Error(job.error);
       setStatus("Uploading MP4 to Azure Blob Storage…");
@@ -46,7 +48,7 @@ export default function DashboardPage() {
       setStatus("Creating processing job…");
       const complete = await authFetch("/api/uploads/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: job.videoId }) });
       if (!complete.ok) throw new Error((await complete.json()).error);
-      setStatus("Transcribing and timestamping with Soniox…");
+      setStatus(targetLanguage ? "Transcribing and translating with Soniox…" : "Transcribing and timestamping with Soniox…");
       const processed = await authFetch("/api/jobs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: job.videoId }) });
       const result = await processed.json();
       if (!processed.ok) throw new Error(result.error);
@@ -82,7 +84,7 @@ export default function DashboardPage() {
     <AppShell>
       <div className="app-container">
         <div className="app-title"><div><span className="section-label">YOUR WORKSPACE</span><h1>Subtitle projects</h1><p>Upload an MP4, transcribe it, refine the timing, and export.</p></div>
-          <label className={`primary-button upload-label ${busy ? "disabled" : ""}`}>+ New video<input type="file" accept="video/mp4,.mp4" onChange={upload} disabled={busy} /></label>
+          <div className="new-project-controls"><label>Translate subtitles to<select value={targetLanguage} disabled={busy} onChange={(event) => setTargetLanguage(event.target.value as TranslationLanguage | "")}><option value="">No translation</option>{TRANSLATION_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}</select></label><label className={`primary-button upload-label ${busy ? "disabled" : ""}`}>+ New video<input type="file" accept="video/mp4,.mp4" onChange={upload} disabled={busy} /></label></div>
         </div>
         {status && <div className="status-banner" role="status"><span className={busy ? "status-pulse" : ""} />{status}</div>}
         <section className="project-list">

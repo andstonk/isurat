@@ -8,7 +8,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   const { cues, settings } = (await request.json()) as { cues?: SubtitleCue[]; settings?: SubtitleSettings };
-  if (!cues?.length || cues.some((cue, index) => cue.cue_index !== index || cue.start_ms < 0 || cue.end_ms <= cue.start_ms || !cue.text.trim())) {
+  if (!cues?.length || cues.some((cue, index) => cue.cue_index !== index || cue.start_ms < 0 || cue.end_ms <= cue.start_ms
+    || !cue.text.trim() || (cue.translated_text != null && !cue.translated_text.trim()))) {
     return NextResponse.json({ error: "Subtitle cues are invalid." }, { status: 400 });
   }
   if (settings && (!isSubtitleFont(settings.font_family)
@@ -27,6 +28,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   await db.from("subtitle_cues").delete().eq("video_id", id);
   const { error } = await db.from("subtitle_cues").insert(cues.map((cue, index) => ({
     video_id: id, cue_index: index, start_ms: Math.round(cue.start_ms), end_ms: Math.round(cue.end_ms), text: cue.text.trim(),
+    translated_text: cue.translated_text?.trim() || null,
   })));
   if (error) return NextResponse.json({ error: "Could not save subtitles." }, { status: 500 });
   const { error: videoError } = await db.from("videos").update({

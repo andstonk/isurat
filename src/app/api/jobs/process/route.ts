@@ -7,6 +7,7 @@ import {
   deleteSonioxTranscription,
   detectTranscriptLanguage,
   getSonioxTranscript,
+  tokensToBilingualCues,
   tokensToSubtitleCues,
   uploadSonioxFile,
   waitForSonioxTranscription,
@@ -32,11 +33,15 @@ export async function POST(request: NextRequest) {
     const buffer = await getVideoContainer().getBlockBlobClient(video.blob_name).downloadToBuffer();
     const sonioxFile = await uploadSonioxFile(buffer, video.file_name);
     sonioxFileId = sonioxFile.id;
-    const transcription = await createSonioxTranscription(sonioxFile.id, video.id);
+    const transcription = await createSonioxTranscription(sonioxFile.id, video.id, video.translation_target_language);
     sonioxTranscriptionId = transcription.id;
     const completed = await waitForSonioxTranscription(transcription.id);
     const result = await getSonioxTranscript(transcription.id);
-    const generatedCues = tokensToSubtitleCues(result.tokens);
+    const bilingualCues = video.translation_target_language ? tokensToBilingualCues(result.tokens) : [];
+    if (video.translation_target_language && !bilingualCues.length) {
+      throw new Error("Soniox did not return translated subtitle tokens for the selected language.");
+    }
+    const generatedCues = bilingualCues.length ? bilingualCues : tokensToSubtitleCues(result.tokens);
     if (!generatedCues.length) throw new Error("Soniox did not return timestamped speech tokens.");
     const cues = generatedCues.map((cue) => ({ ...cue, video_id: video.id }));
     await db.from("subtitle_cues").delete().eq("video_id", video.id);
@@ -44,8 +49,9 @@ export async function POST(request: NextRequest) {
     if (cueError) throw cueError;
     await db.from("videos").update({
       status: "ready",
-      transcript: result.text,
+      transcript: cues.map((cue) => cue.text).join(" "),
       language: detectTranscriptLanguage(result.tokens),
+      translation_status: video.translation_target_language && bilingualCues.length ? "ready" : "none",
       duration_ms: completed.audio_duration_ms ?? cues.at(-1)?.end_ms,
       updated_at: new Date().toISOString(),
     }).eq("id", video.id);
@@ -53,7 +59,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown processing error";
     console.error("Transcription failed", error);
-    await db.from("videos").update({ status: "failed", error_message: message.slice(0, 500), updated_at: new Date().toISOString() }).eq("id", video.id);
+    await db.from("videos").update({
+      status: "failed",
+      translation_status: video.translation_target_language ? "failed" : "none",
+      error_message: message.slice(0, 500),
+      updated_at: new Date().toISOString(),
+    }).eq("id", video.id);
     return NextResponse.json({ error: "Transcription failed. Check the server configuration and try again." }, { status: 500 });
   } finally {
     if (sonioxTranscriptionId) {

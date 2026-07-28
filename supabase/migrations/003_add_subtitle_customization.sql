@@ -8,7 +8,9 @@ alter table public.videos
   add column if not exists subtitle_strikethrough boolean not null default false,
   add column if not exists subtitle_backdrop_color text not null default '#000000',
   add column if not exists subtitle_backdrop_opacity integer not null default 82,
-  add column if not exists words_per_cue integer not null default 8;
+  add column if not exists words_per_cue integer not null default 8,
+  add column if not exists translation_target_language text,
+  add column if not exists translation_status text not null default 'none';
 
 alter table public.videos
   drop constraint if exists videos_subtitle_font_family_check,
@@ -25,4 +27,13 @@ alter table public.videos
   drop constraint if exists videos_subtitle_backdrop_opacity_check,
   add constraint videos_subtitle_backdrop_opacity_check check (subtitle_backdrop_opacity between 0 and 100),
   drop constraint if exists videos_words_per_cue_check,
-  add constraint videos_words_per_cue_check check (words_per_cue between 2 and 16);
+  add constraint videos_words_per_cue_check check (words_per_cue between 2 and 16),
+  drop constraint if exists videos_translation_target_language_check,
+  add constraint videos_translation_target_language_check check (translation_target_language is null or translation_target_language in (
+    'en', 'tl', 'fr', 'es', 'de', 'it', 'pt', 'ja', 'zh', 'ko', 'hi', 'ar', 'id', 'ms', 'vi'
+  )),
+  drop constraint if exists videos_translation_status_check,
+  add constraint videos_translation_status_check check (translation_status in ('none', 'pending', 'ready', 'failed'));
+
+alter table public.subtitle_cues
+  add column if not exists translated_text text;

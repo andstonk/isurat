@@ -1,6 +1,6 @@
 # Subframe
 
-A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription jobs, edit timestamped subtitles, customize fonts and backdrops, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
+A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, customize fonts and backdrops, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
 
 ## Stack
 
@@ -8,7 +8,7 @@ A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 vid
 - Tailwind CSS 4
 - Supabase Auth and PostgreSQL
 - Azure Blob Storage for private MP4 uploads
-- Soniox asynchronous transcription with token timestamps
+- Soniox asynchronous transcription, language detection, and one-way translation
 - Vercel-ready deployment
 
 ## Local setup
@@ -43,7 +43,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 AZURE_STORAGE_CONNECTION_STRING=your-connection-string
 AZURE_STORAGE_CONTAINER=videos
 SONIOX_API_KEY=your-soniox-api-key
-SONIOX_TRANSCRIPTION_MODEL=stt-async-v4
+SONIOX_TRANSCRIPTION_MODEL=stt-async-v5
 # Optional; change this for your Soniox project region.
 SONIOX_API_BASE_URL=https://api.soniox.com/v1
 ```
@@ -58,7 +58,7 @@ For Google sign-in, enable Google under **Authentication → Providers**, create
 
 Email/password registration also requires the Email provider to be enabled. When email confirmation is enabled, configure a working SMTP provider and ensure the confirmation template redirects to the application's `/auth/callback` URL.
 
-The MVP limits MP4 uploads to 25 MB and waits for Soniox's asynchronous transcription inside the processing request. For production-scale videos, submit jobs from an Azure Function or queue worker and use a Soniox webhook to update PostgreSQL when processing completes.
+The MVP limits MP4 uploads to 25 MB and waits for Soniox's asynchronous transcription inside the processing request. A translation target can be selected before upload; the editor then supports original-only, translated-only, or double subtitles. For production-scale videos, submit jobs from an Azure Function or queue worker and use a Soniox webhook to update PostgreSQL when processing completes.
 
 ### 5. Run locally
 
