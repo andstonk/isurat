@@ -1,6 +1,6 @@
 # Subframe
 
-A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, customize fonts and backdrops, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
+A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, style each subtitle track independently, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
 
 ## Stack
 

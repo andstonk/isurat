@@ -50,7 +50,7 @@ export const SUBTITLE_FONTS = [
 
 export type SubtitleFont = (typeof SUBTITLE_FONTS)[number];
 
-export type SubtitleSettings = {
+export type SubtitleTrackStyle = {
   font_family: SubtitleFont;
   text_color: string;
   font_size: number;
@@ -60,6 +60,9 @@ export type SubtitleSettings = {
   strikethrough: boolean;
   backdrop_color: string;
   backdrop_opacity: number;
+};
+
+export type SubtitleSettings = SubtitleTrackStyle & {
   words_per_cue: number;
 };
 
@@ -76,8 +79,32 @@ export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
   words_per_cue: 8,
 };
 
+export const DEFAULT_TRANSLATION_STYLE: SubtitleTrackStyle = {
+  font_family: "Arial",
+  text_color: "#D8CEFF",
+  font_size: 19,
+  bold: false,
+  italic: false,
+  underline: false,
+  strikethrough: false,
+  backdrop_color: "#000000",
+  backdrop_opacity: 82,
+};
+
 export function isSubtitleFont(value: unknown): value is SubtitleFont {
   return typeof value === "string" && SUBTITLE_FONTS.some((font) => font === value);
+}
+
+export function isSubtitleTrackStyle(value: unknown): value is SubtitleTrackStyle {
+  if (!value || typeof value !== "object") return false;
+  const style = value as Record<string, unknown>;
+  return isSubtitleFont(style.font_family)
+    && typeof style.text_color === "string" && /^#[0-9a-f]{6}$/i.test(style.text_color)
+    && Number.isInteger(style.font_size) && Number(style.font_size) >= 12 && Number(style.font_size) <= 64
+    && typeof style.bold === "boolean" && typeof style.italic === "boolean"
+    && typeof style.underline === "boolean" && typeof style.strikethrough === "boolean"
+    && typeof style.backdrop_color === "string" && /^#[0-9a-f]{6}$/i.test(style.backdrop_color)
+    && Number.isInteger(style.backdrop_opacity) && Number(style.backdrop_opacity) >= 0 && Number(style.backdrop_opacity) <= 100;
 }
 
 export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {

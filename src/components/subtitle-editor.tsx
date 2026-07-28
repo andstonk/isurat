@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { createBrowserSupabase } from "@/lib/supabase";
 import {
   DEFAULT_SUBTITLE_SETTINGS,
+  DEFAULT_TRANSLATION_STYLE,
   formatTimestamp,
   isSubtitleFont,
   resegmentCues,
@@ -14,7 +15,37 @@ import {
   type SubtitleCue,
   type SubtitleExportMode,
   type SubtitleSettings,
+  type SubtitleTrackStyle,
 } from "@/lib/subtitles";
+
+function TrackStyleControls({ style, name, onChange }: {
+  style: SubtitleTrackStyle;
+  name: string;
+  onChange: (style: SubtitleTrackStyle) => void;
+}) {
+  const patch = (value: Partial<SubtitleTrackStyle>) => onChange({ ...style, ...value });
+  return <div className="control-grid track-style-grid">
+    <label>Font<select value={style.font_family} onChange={(event) => patch({ font_family: event.target.value as SubtitleTrackStyle["font_family"] })}>{SUBTITLE_FONTS.map((font) => <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>)}</select></label>
+    <label>Text color<span className="color-control"><input aria-label={`${name} subtitle text color`} type="color" value={style.text_color} onChange={(event) => patch({ text_color: event.target.value })} /><output>{style.text_color.toUpperCase()}</output></span></label>
+    <label className="range-control">Font size <output>{style.font_size}px</output><input aria-label={`${name} subtitle font size`} type="range" min="12" max="64" step="1" value={style.font_size} onChange={(event) => patch({ font_size: Number(event.target.value) })} /></label>
+    <div className="control-field formatting-control"><span>Text formatting</span><div className="format-buttons"><button type="button" aria-label={`${name} bold`} aria-pressed={style.bold} className={style.bold ? "active" : ""} onClick={() => patch({ bold: !style.bold })}><b>B</b></button><button type="button" aria-label={`${name} italic`} aria-pressed={style.italic} className={style.italic ? "active" : ""} onClick={() => patch({ italic: !style.italic })}><i>I</i></button><button type="button" aria-label={`${name} underline`} aria-pressed={style.underline} className={style.underline ? "active" : ""} onClick={() => patch({ underline: !style.underline })}><u>U</u></button><button type="button" aria-label={`${name} strikethrough`} aria-pressed={style.strikethrough} className={style.strikethrough ? "active" : ""} onClick={() => patch({ strikethrough: !style.strikethrough })}><s>S</s></button></div></div>
+    <label>Backdrop color<span className="color-control"><input aria-label={`${name} subtitle backdrop color`} type="color" value={style.backdrop_color} onChange={(event) => patch({ backdrop_color: event.target.value })} /><output>{style.backdrop_color.toUpperCase()}</output></span></label>
+    <label className="range-control">Backdrop opacity <output>{style.backdrop_opacity}%</output><input aria-label={`${name} subtitle backdrop opacity`} type="range" min="0" max="100" step="1" value={style.backdrop_opacity} onChange={(event) => patch({ backdrop_opacity: Number(event.target.value) })} /></label>
+  </div>;
+}
+
+function captionStyle(style: SubtitleTrackStyle) {
+  const backdropAlpha = Math.round(style.backdrop_opacity * 2.55).toString(16).padStart(2, "0");
+  return {
+    fontFamily: `"${style.font_family}", sans-serif`,
+    fontSize: `${style.font_size}px`,
+    fontWeight: style.bold ? 700 : 400,
+    fontStyle: style.italic ? "italic" : "normal",
+    textDecoration: [style.underline && "underline", style.strikethrough && "line-through"].filter(Boolean).join(" ") || "none",
+    color: style.text_color,
+    backgroundColor: `${style.backdrop_color}${backdropAlpha}`,
+  } as const;
+}
 
 type Video = {
   id: string;
@@ -33,6 +64,15 @@ type Video = {
   subtitle_strikethrough?: boolean;
   subtitle_backdrop_color?: string;
   subtitle_backdrop_opacity?: number;
+  translation_font_family?: string;
+  translation_text_color?: string;
+  translation_font_size?: number;
+  translation_bold?: boolean;
+  translation_italic?: boolean;
+  translation_underline?: boolean;
+  translation_strikethrough?: boolean;
+  translation_backdrop_color?: string;
+  translation_backdrop_opacity?: number;
   words_per_cue?: number;
 };
 
@@ -42,6 +82,7 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   const [video, setVideo] = useState<Video | null>(null);
   const [cues, setCues] = useState<SubtitleCue[]>([]);
   const [settings, setSettings] = useState<SubtitleSettings>(DEFAULT_SUBTITLE_SETTINGS);
+  const [translationStyle, setTranslationStyle] = useState<SubtitleTrackStyle>(DEFAULT_TRANSLATION_STYLE);
   const [subtitleMode, setSubtitleMode] = useState<SubtitleExportMode>("original");
   const [time, setTime] = useState(0);
   const [message, setMessage] = useState("Loading subtitles…");
@@ -70,6 +111,17 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
       backdrop_opacity: loadedVideo.subtitle_backdrop_opacity ?? DEFAULT_SUBTITLE_SETTINGS.backdrop_opacity,
       words_per_cue: loadedVideo.words_per_cue ?? DEFAULT_SUBTITLE_SETTINGS.words_per_cue,
     });
+    setTranslationStyle({
+      font_family: isSubtitleFont(loadedVideo.translation_font_family) ? loadedVideo.translation_font_family : DEFAULT_TRANSLATION_STYLE.font_family,
+      text_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.translation_text_color ?? "") ? loadedVideo.translation_text_color! : DEFAULT_TRANSLATION_STYLE.text_color,
+      font_size: loadedVideo.translation_font_size && loadedVideo.translation_font_size >= 12 && loadedVideo.translation_font_size <= 64 ? loadedVideo.translation_font_size : DEFAULT_TRANSLATION_STYLE.font_size,
+      bold: loadedVideo.translation_bold ?? DEFAULT_TRANSLATION_STYLE.bold,
+      italic: loadedVideo.translation_italic ?? DEFAULT_TRANSLATION_STYLE.italic,
+      underline: loadedVideo.translation_underline ?? DEFAULT_TRANSLATION_STYLE.underline,
+      strikethrough: loadedVideo.translation_strikethrough ?? DEFAULT_TRANSLATION_STYLE.strikethrough,
+      backdrop_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.translation_backdrop_color ?? "") ? loadedVideo.translation_backdrop_color! : DEFAULT_TRANSLATION_STYLE.backdrop_color,
+      backdrop_opacity: loadedVideo.translation_backdrop_opacity ?? DEFAULT_TRANSLATION_STYLE.backdrop_opacity,
+    });
     setMessage("");
   }, [router, token, videoId]);
   useEffect(() => { void load(); }, [load]);
@@ -77,7 +129,7 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   function update(index: number, patch: Partial<SubtitleCue>) { setCues((current) => current.map((cue, cueIndex) => cueIndex === index ? { ...cue, ...patch } : cue)); }
   async function save() {
     setMessage("Saving…"); const accessToken = await token();
-    const response = await fetch(`/api/videos/${videoId}/subtitles`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cues, settings }) });
+    const response = await fetch(`/api/videos/${videoId}/subtitles`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cues, settings, translationStyle }) });
     const data = await response.json(); setMessage(response.ok ? "All changes saved." : data.error);
   }
   function applyWordLimit() {
@@ -92,21 +144,17 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     anchor.href = url; anchor.download = `${video?.file_name.replace(/\.mp4$/i, "")}.${format}`; anchor.click(); URL.revokeObjectURL(url);
   }
 
-  const captionBackground = `${settings.backdrop_color}${Math.round(settings.backdrop_opacity * 2.55).toString(16).padStart(2, "0")}`;
-  const textDecoration = [settings.underline && "underline", settings.strikethrough && "line-through"].filter(Boolean).join(" ") || "none";
   const hasTranslation = video?.translation_status === "ready" && cues.some((cue) => cue.translated_text);
   const targetLanguage = translationLanguageLabel(video?.translation_target_language);
 
   return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={save}>Save changes</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
-    <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; }} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}{activeCue && <div className="live-caption" style={{ fontFamily: `"${settings.font_family}", sans-serif`, fontSize: `${settings.font_size}px`, fontWeight: settings.bold ? 700 : 400, fontStyle: settings.italic ? "italic" : "normal", textDecoration, color: settings.text_color, backgroundColor: captionBackground }}>{subtitleMode !== "translated" && <span>{activeCue.text}</span>}{subtitleMode === "bilingual" && activeCue.translated_text && <span className="translated-caption">{activeCue.translated_text}</span>}{subtitleMode === "translated" && <span>{activeCue.translated_text ?? activeCue.text}</span>}</div>}</div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
-      <div className="subtitle-controls"><div className="controls-heading"><div><span className="section-label">APPEARANCE</span><h2>Subtitle style</h2></div><small>Preview updates instantly</small></div><div className="control-grid">
-        <label>Font<select value={settings.font_family} onChange={(event) => setSettings((current) => ({ ...current, font_family: event.target.value as SubtitleSettings["font_family"] }))}>{SUBTITLE_FONTS.map((font) => <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>)}</select></label>
-        <label>Text color<span className="color-control"><input aria-label="Subtitle text color" type="color" value={settings.text_color} onChange={(event) => setSettings((current) => ({ ...current, text_color: event.target.value }))} /><output>{settings.text_color.toUpperCase()}</output></span></label>
-        <label className="range-control">Font size <output>{settings.font_size}px</output><input type="range" min="12" max="64" step="1" value={settings.font_size} onChange={(event) => setSettings((current) => ({ ...current, font_size: Number(event.target.value) }))} /></label>
-        <div className="control-field formatting-control"><span>Text formatting</span><div className="format-buttons"><button type="button" aria-label="Bold" aria-pressed={settings.bold} className={settings.bold ? "active" : ""} onClick={() => setSettings((current) => ({ ...current, bold: !current.bold }))}><b>B</b></button><button type="button" aria-label="Italic" aria-pressed={settings.italic} className={settings.italic ? "active" : ""} onClick={() => setSettings((current) => ({ ...current, italic: !current.italic }))}><i>I</i></button><button type="button" aria-label="Underline" aria-pressed={settings.underline} className={settings.underline ? "active" : ""} onClick={() => setSettings((current) => ({ ...current, underline: !current.underline }))}><u>U</u></button><button type="button" aria-label="Strikethrough" aria-pressed={settings.strikethrough} className={settings.strikethrough ? "active" : ""} onClick={() => setSettings((current) => ({ ...current, strikethrough: !current.strikethrough }))}><s>S</s></button></div></div>
-        <label>Backdrop color<span className="color-control"><input type="color" value={settings.backdrop_color} onChange={(event) => setSettings((current) => ({ ...current, backdrop_color: event.target.value }))} /><output>{settings.backdrop_color.toUpperCase()}</output></span></label>
-        <label className="range-control">Backdrop opacity <output>{settings.backdrop_opacity}%</output><input type="range" min="0" max="100" step="1" value={settings.backdrop_opacity} onChange={(event) => setSettings((current) => ({ ...current, backdrop_opacity: Number(event.target.value) }))} /></label>
+    <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; }} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}{activeCue && <div className="live-caption">{subtitleMode !== "translated" && <span className="caption-line" style={captionStyle(settings)}>{activeCue.text}</span>}{subtitleMode === "bilingual" && activeCue.translated_text && <span className="caption-line translated-caption" style={captionStyle(translationStyle)}>{activeCue.translated_text}</span>}{subtitleMode === "translated" && <span className="caption-line" style={captionStyle(translationStyle)}>{activeCue.translated_text ?? activeCue.text}</span>}</div>}</div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
+      <div className="subtitle-controls"><div className="controls-heading"><div><span className="section-label">ORIGINAL APPEARANCE</span><h2>Original subtitle style</h2></div><small>Preview updates instantly</small></div>
+        <TrackStyleControls style={settings} name="Original" onChange={(style) => setSettings((current) => ({ ...current, ...style }))} />
+        <div className="control-grid segmentation-controls">
         <div className="control-field range-control words-control"><label htmlFor="words-per-cue">Maximum words per subtitle</label><output htmlFor="words-per-cue">{settings.words_per_cue} words</output><input id="words-per-cue" type="range" min="2" max="16" step="1" value={settings.words_per_cue} onChange={(event) => setSettings((current) => ({ ...current, words_per_cue: Number(event.target.value) }))} /><span className="range-scale"><small>2</small><small>16</small></span><button type="button" className="secondary-button apply-limit" onClick={applyWordLimit}>Apply word limit</button></div>
-      </div></div></section>
+      </div></div>
+      {hasTranslation && <div className="subtitle-controls translation-controls"><div className="controls-heading"><div><span className="section-label">TRANSLATION APPEARANCE</span><h2>{targetLanguage} subtitle style</h2></div><small>Styled independently</small></div><TrackStyleControls style={translationStyle} name={targetLanguage} onChange={setTranslationStyle} /></div>}
+      </section>
     <section className="cue-pane"><div className="cue-head"><b>{cues.length} subtitle cues</b><span>{hasTranslation ? `${video?.language?.toUpperCase() ?? "AUTO"} + ${video?.translation_target_language?.toUpperCase()}` : video?.language?.toUpperCase() ?? "AUTO"}</span></div>{cues.map((cue, index) => <article className={`cue-row ${activeCue?.cue_index === cue.cue_index ? "active" : ""}`} key={cue.id ?? index} onClick={() => { if (videoRef.current) videoRef.current.currentTime = cue.start_ms / 1000; }}><span className="cue-number">{index + 1}</span><div className="time-fields"><input aria-label="Start time in milliseconds" type="number" min="0" value={cue.start_ms} onChange={(e) => update(index, { start_ms: Number(e.target.value) })} /><span>→</span><input aria-label="End time in milliseconds" type="number" min="1" value={cue.end_ms} onChange={(e) => update(index, { end_ms: Number(e.target.value) })} /><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div><div className="cue-text-fields"><label><small>Original</small><textarea aria-label={`Original subtitle ${index + 1}`} value={cue.text} onChange={(e) => update(index, { text: e.target.value })} /></label>{cue.translated_text != null && <label><small>{targetLanguage}</small><textarea aria-label={`${targetLanguage} subtitle ${index + 1}`} value={cue.translated_text} onChange={(e) => update(index, { translated_text: e.target.value })} /></label>}</div></article>)}</section></div></div></AppShell>;
 }

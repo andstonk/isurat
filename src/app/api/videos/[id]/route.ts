@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   const db = createAdminSupabase();
-  const { data: video } = await db.from("videos").select("id, file_name, blob_name, status, language, duration_ms, transcript, translation_target_language, translation_status, subtitle_font_family, subtitle_text_color, subtitle_font_size, subtitle_bold, subtitle_italic, subtitle_underline, subtitle_strikethrough, subtitle_backdrop_color, subtitle_backdrop_opacity, words_per_cue")
+  const { data: video } = await db.from("videos").select("id, file_name, blob_name, status, language, duration_ms, transcript, translation_target_language, translation_status, subtitle_font_family, subtitle_text_color, subtitle_font_size, subtitle_bold, subtitle_italic, subtitle_underline, subtitle_strikethrough, subtitle_backdrop_color, subtitle_backdrop_opacity, translation_font_family, translation_text_color, translation_font_size, translation_bold, translation_italic, translation_underline, translation_strikethrough, translation_backdrop_color, translation_backdrop_opacity, words_per_cue")
     .eq("id", id).eq("user_id", user.id).single();
   if (!video) return NextResponse.json({ error: "Video not found." }, { status: 404 });
   const { data: cues, error } = await db.from("subtitle_cues").select("id, cue_index, start_ms, end_ms, text, translated_text")
