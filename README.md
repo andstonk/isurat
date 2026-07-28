@@ -1,6 +1,6 @@
 # Subframe
 
-A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription jobs, edit timestamped subtitles, preview captions, and export SRT, VTT, or TXT files.
+A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription jobs, edit timestamped subtitles, customize fonts and backdrops, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
 
 ## Stack
 
@@ -21,11 +21,12 @@ npm install
 
 ### 2. Create the Supabase table
 
-Create a Supabase project, open its SQL editor, then paste and run the SQL contents of both files in order (do not run the file path text itself):
+Create a Supabase project, open its SQL editor, then paste and run the SQL contents of these files in order (do not run the file path text itself):
 
 ```text
 supabase/migrations/001_create_waitlist.sql
 supabase/migrations/002_create_subtitle_mvp.sql
+supabase/migrations/003_add_subtitle_customization.sql
 ```
 
 The migration enables Row Level Security and creates no public policies. Browser clients cannot read or write the table; submissions are handled only by the server API route.
