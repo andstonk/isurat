@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [videos, setVideos] = useState<Video[]>([]);
   const [busy, setBusy] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
 
   const loadVideos = useCallback(async () => {
@@ -56,6 +57,27 @@ export default function DashboardPage() {
     finally { setBusy(false); event.target.value = ""; }
   }
 
+  async function deleteVideo(video: Video) {
+    if (!window.confirm(`Delete “${video.file_name}” and all of its subtitles? This cannot be undone.`)) return;
+    setDeletingId(video.id);
+    setStatus(`Deleting ${video.file_name}…`);
+    try {
+      const response = await authFetch(`/api/videos/${video.id}`, { method: "DELETE" });
+      if (response.status === 401) return router.push("/auth");
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error ?? "Could not delete the video project.");
+      }
+      setVideos((current) => current.filter((item) => item.id !== video.id));
+      setStatus(`${video.file_name} was deleted.`);
+    } catch (error) {
+      setStatus(error instanceof Error && error.message !== "AUTH_REQUIRED" ? error.message : "Could not delete the video project.");
+      if (error instanceof Error && error.message === "AUTH_REQUIRED") router.push("/auth");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <AppShell>
       <div className="app-container">
@@ -68,7 +90,12 @@ export default function DashboardPage() {
             <article key={video.id} className="project-row">
               <div className="video-thumb">MP4</div><div className="project-meta"><h2>{video.file_name}</h2><p>{(video.file_size / 1024 / 1024).toFixed(1)} MB · {new Date(video.created_at).toLocaleDateString()}</p>{video.error_message && <small>{video.error_message}</small>}</div>
               <span className={`status-chip status-${video.status}`}>{video.status}</span>
-              {video.status === "ready" && <Link className="secondary-button" href={`/editor/${video.id}`}>Open editor</Link>}
+              <div className="project-actions">
+                {video.status === "ready" && <Link className="secondary-button" href={`/editor/${video.id}`}>Open editor</Link>}
+                <button className="secondary-button danger-button" type="button" onClick={() => void deleteVideo(video)} disabled={deletingId !== null}>
+                  {deletingId === video.id ? "Deleting…" : "Delete"}
+                </button>
+              </div>
             </article>
           ))}
         </section>
