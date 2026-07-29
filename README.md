@@ -1,6 +1,6 @@
 # Subframe
 
-A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, style each subtitle track independently with system, Google, or private uploaded fonts, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
+A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, style each subtitle track independently with system, Google, or private uploaded fonts, enable word-timed karaoke highlighting, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
 
 ## Stack
 
@@ -28,6 +28,7 @@ supabase/migrations/001_create_waitlist.sql
 supabase/migrations/002_create_subtitle_mvp.sql
 supabase/migrations/003_add_subtitle_customization.sql
 supabase/migrations/004_add_user_fonts.sql
+supabase/migrations/005_add_karaoke_subtitles.sql
 ```
 
 The migration enables Row Level Security and creates no public policies. Browser clients cannot read or write the table; submissions are handled only by the server API route.
@@ -57,6 +58,8 @@ Find Supabase values in project settings under API. Use the browser-safe `sb_pub
 Each user can keep up to 50 active private fonts. WOFF2, WOFF, TTF, and OTF files up to 5 MB are accepted after server-side signature and MIME validation. Uploaders must confirm they have the right or license to use each font. Archiving removes a font from new selections while preserving it for saved projects that already reference it.
 
 Google and uploaded font choices affect the editor preview and saved project settings. SRT, VTT, and TXT are text-only formats, so those downloads intentionally do not contain styling or font files.
+
+Karaoke highlighting uses Soniox word-level timestamps for newly processed videos. Existing or manually edited cues fall back to evenly distributed word timing within each cue. The effect is saved with the project and shown in the editor preview; text-only subtitle exports do not preserve the highlight color.
 
 ### 4. Configure authentication providers
 

@@ -7,6 +7,13 @@ export type SubtitleCue = {
   end_ms: number;
   text: string;
   translated_text?: string | null;
+  words?: SubtitleWord[] | null;
+};
+
+export type SubtitleWord = {
+  text: string;
+  start_ms: number;
+  end_ms: number;
 };
 
 export const TRANSLATION_LANGUAGES = [
@@ -68,6 +75,8 @@ export type SubtitleTrackStyle = {
 
 export type SubtitleSettings = SubtitleTrackStyle & {
   words_per_cue: number;
+  karaoke_enabled: boolean;
+  karaoke_color: string;
 };
 
 export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
@@ -83,6 +92,8 @@ export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
   backdrop_color: "#000000",
   backdrop_opacity: 82,
   words_per_cue: 8,
+  karaoke_enabled: false,
+  karaoke_color: "#A78BFA",
 };
 
 export const DEFAULT_TRANSLATION_STYLE: SubtitleTrackStyle = {
@@ -120,6 +131,37 @@ export function isSubtitleTrackStyle(value: unknown): value is SubtitleTrackStyl
     && Number.isInteger(style.backdrop_opacity) && Number(style.backdrop_opacity) >= 0 && Number(style.backdrop_opacity) <= 100;
 }
 
+export function hasValidWordTimings(value: unknown): value is SubtitleWord[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= 500 && value.every((word) => {
+    if (!word || typeof word !== "object") return false;
+    const item = word as Record<string, unknown>;
+    return typeof item.text === "string" && item.text.trim().length > 0 && item.text.length <= 200
+      && Number.isFinite(item.start_ms) && Number.isFinite(item.end_ms)
+      && Number(item.start_ms) >= 0 && Number(item.end_ms) > Number(item.start_ms);
+  });
+}
+
+export function timedWordsForCue(cue: SubtitleCue): SubtitleWord[] {
+  if (hasValidWordTimings(cue.words)
+    && cue.words.map((word) => word.text).join("").trim().replace(/\s+/g, " ") === cue.text.trim().replace(/\s+/g, " ")) {
+    return cue.words.map((word) => {
+      const startMs = Math.max(cue.start_ms, Math.min(cue.end_ms - 1, Math.round(word.start_ms)));
+      return {
+        text: word.text,
+        start_ms: startMs,
+        end_ms: Math.max(startMs + 1, Math.min(cue.end_ms, Math.round(word.end_ms))),
+      };
+    });
+  }
+  const parts = cue.text.match(/\S+\s*/g) ?? [];
+  const duration = Math.max(parts.length, cue.end_ms - cue.start_ms);
+  return parts.map((text, index) => ({
+    text,
+    start_ms: Math.round(cue.start_ms + duration * index / parts.length),
+    end_ms: Math.round(cue.start_ms + duration * (index + 1) / parts.length),
+  }));
+}
+
 export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {
   const wordLimit = Math.max(2, Math.min(16, Math.round(maximumWords)));
   if (cues.some((cue) => cue.translated_text)) {
@@ -137,26 +179,20 @@ export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {
         const translatedEnd = Math.round(endRatio * translatedWords.length);
         const startMs = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * startRatio);
         const endMs = Math.round(cue.start_ms + (cue.end_ms - cue.start_ms) * endRatio);
+        const words = timedWordsForCue(cue).slice(originalStart, originalEnd);
         bilingual.push({
           cue_index: bilingual.length,
           start_ms: startMs,
           end_ms: Math.max(startMs + 1, endMs),
           text: originalWords.slice(originalStart, originalEnd).join(" "),
           translated_text: translatedWords.slice(translatedStart, translatedEnd).join(" ") || null,
+          words,
         });
       }
     }
     return bilingual;
   }
-  const words = cues.flatMap((cue) => {
-    const parts = cue.text.trim().split(/\s+/).filter(Boolean);
-    const duration = Math.max(parts.length, cue.end_ms - cue.start_ms);
-    return parts.map((text, index) => ({
-      text,
-      start_ms: Math.round(cue.start_ms + duration * index / parts.length),
-      end_ms: Math.round(cue.start_ms + duration * (index + 1) / parts.length),
-    }));
-  });
+  const words = cues.flatMap(timedWordsForCue);
 
   const result: SubtitleCue[] = [];
   let group: typeof words = [];
@@ -166,7 +202,8 @@ export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {
       cue_index: result.length,
       start_ms: group[0].start_ms,
       end_ms: Math.max(group[0].start_ms + 1, group.at(-1)!.end_ms),
-      text: group.map((word) => word.text).join(" "),
+      text: group.map((word) => word.text).join("").trim(),
+      words: group,
     });
     group = [];
   };

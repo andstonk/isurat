@@ -14,6 +14,7 @@ import {
   formatTimestamp,
   isSubtitleFont,
   resegmentCues,
+  timedWordsForCue,
   translationLanguageLabel,
   type SubtitleCue,
   type SubtitleExportMode,
@@ -85,11 +86,14 @@ type Video = {
   translation_backdrop_color?: string;
   translation_backdrop_opacity?: number;
   words_per_cue?: number;
+  karaoke_enabled?: boolean;
+  karaoke_color?: string;
 };
 
 export function SubtitleEditor({ videoId }: { videoId: string }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playbackFrameRef = useRef<number | null>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [cues, setCues] = useState<SubtitleCue[]>([]);
   const [settings, setSettings] = useState<SubtitleSettings>(DEFAULT_SUBTITLE_SETTINGS);
@@ -104,6 +108,17 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   const [time, setTime] = useState(0);
   const [message, setMessage] = useState("Loading subtitles…");
   const activeCue = useMemo(() => cues.find((cue) => time >= cue.start_ms && time < cue.end_ms), [cues, time]);
+  const updatePlaybackTime = useCallback(function updatePlaybackTime() {
+    const player = videoRef.current;
+    if (!player) return;
+    setTime(player.currentTime * 1000);
+    if (!player.paused && !player.ended) playbackFrameRef.current = requestAnimationFrame(updatePlaybackTime);
+  }, []);
+  const stopPlaybackTimer = useCallback(() => {
+    if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current);
+    playbackFrameRef.current = null;
+    if (videoRef.current) setTime(videoRef.current.currentTime * 1000);
+  }, []);
 
   const token = useCallback(async () => (await createBrowserSupabase().auth.getSession()).data.session?.access_token, []);
   const loadFontLibrary = useCallback(async () => {
@@ -154,6 +169,8 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
       backdrop_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.subtitle_backdrop_color ?? "") ? loadedVideo.subtitle_backdrop_color! : DEFAULT_SUBTITLE_SETTINGS.backdrop_color,
       backdrop_opacity: loadedVideo.subtitle_backdrop_opacity ?? DEFAULT_SUBTITLE_SETTINGS.backdrop_opacity,
       words_per_cue: loadedVideo.words_per_cue ?? DEFAULT_SUBTITLE_SETTINGS.words_per_cue,
+      karaoke_enabled: loadedVideo.karaoke_enabled ?? DEFAULT_SUBTITLE_SETTINGS.karaoke_enabled,
+      karaoke_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.karaoke_color ?? "") ? loadedVideo.karaoke_color! : DEFAULT_SUBTITLE_SETTINGS.karaoke_color,
     });
     setTranslationStyle({
       font_family: loadedVideo.translation_font_source === "google" || loadedVideo.translation_font_source === "upload"
@@ -173,6 +190,9 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     setMessage("");
   }, [router, token, videoId]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => () => {
+    if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current);
+  }, []);
   useEffect(() => {
     const styles = [settings, translationStyle];
     void Promise.all(styles.map(async (style) => {
@@ -206,12 +226,18 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   const hasTranslation = video?.translation_status === "ready" && cues.some((cue) => cue.translated_text);
   const targetLanguage = translationLanguageLabel(video?.translation_target_language);
 
+  const originalCaption = activeCue && settings.karaoke_enabled
+    ? timedWordsForCue(activeCue).map((word, index) => <span key={`${word.start_ms}-${index}`} className="karaoke-word" style={{ color: time >= word.start_ms && time < word.end_ms ? settings.karaoke_color : undefined }}>{word.text}</span>)
+    : activeCue?.text;
+
   return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message || fontMessage}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={save}>Save changes</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
-    <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; }} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}{activeCue && <div className="live-caption">{subtitleMode !== "translated" && <span className="caption-line" style={captionStyle(settings)}>{activeCue.text}</span>}{subtitleMode === "bilingual" && activeCue.translated_text && <span className="caption-line translated-caption" style={captionStyle(translationStyle)}>{activeCue.translated_text}</span>}{subtitleMode === "translated" && <span className="caption-line" style={captionStyle(translationStyle)}>{activeCue.translated_text ?? activeCue.text}</span>}</div>}</div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
+    <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current); updatePlaybackTime(); }} onPause={stopPlaybackTimer} onEnded={stopPlaybackTimer} onSeeked={(event) => setTime(event.currentTarget.currentTime * 1000)} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}{activeCue && <div className="live-caption">{subtitleMode !== "translated" && <span className="caption-line" style={captionStyle(settings)}>{originalCaption}</span>}{subtitleMode === "bilingual" && activeCue.translated_text && <span className="caption-line translated-caption" style={captionStyle(translationStyle)}>{activeCue.translated_text}</span>}{subtitleMode === "translated" && <span className="caption-line" style={captionStyle(translationStyle)}>{activeCue.translated_text ?? activeCue.text}</span>}</div>}</div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
       <div className="subtitle-controls"><div className="controls-heading"><div><span className="section-label">ORIGINAL APPEARANCE</span><h2>Original subtitle style</h2></div><small>Preview updates instantly</small></div>
         <TrackStyleControls style={settings} name="Original" googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style) => setSettings((current) => ({ ...current, ...style }))} />
         <div className="control-grid segmentation-controls">
         <div className="control-field range-control words-control"><label htmlFor="words-per-cue">Maximum words per subtitle</label><output htmlFor="words-per-cue">{settings.words_per_cue} words</output><input id="words-per-cue" type="range" min="2" max="16" step="1" value={settings.words_per_cue} onChange={(event) => setSettings((current) => ({ ...current, words_per_cue: Number(event.target.value) }))} /><span className="range-scale"><small>2</small><small>16</small></span><button type="button" className="secondary-button apply-limit" onClick={applyWordLimit}>Apply word limit</button></div>
+        <label className="karaoke-toggle"><span><b>Karaoke highlighting</b><small>Highlight each original word as it is spoken</small></span><input type="checkbox" checked={settings.karaoke_enabled} onChange={(event) => setSettings((current) => ({ ...current, karaoke_enabled: event.target.checked }))} /></label>
+        <label className="karaoke-color">Highlight color<span className="color-control"><input aria-label="Karaoke highlight color" type="color" value={settings.karaoke_color} disabled={!settings.karaoke_enabled} onChange={(event) => setSettings((current) => ({ ...current, karaoke_color: event.target.value }))} /><output>{settings.karaoke_color.toUpperCase()}</output></span></label>
       </div></div>
       {hasTranslation && <div className="subtitle-controls translation-controls"><div className="controls-heading"><div><span className="section-label">TRANSLATION APPEARANCE</span><h2>{targetLanguage} subtitle style</h2></div><small>Styled independently</small></div><TrackStyleControls style={translationStyle} name={targetLanguage} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={setTranslationStyle} /></div>}
       </section>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/api-auth";
 import { isGoogleFontFamily } from "@/lib/google-fonts";
 import { createAdminSupabase } from "@/lib/supabase";
-import { isSubtitleTrackStyle, type SubtitleCue, type SubtitleSettings, type SubtitleTrackStyle } from "@/lib/subtitles";
+import { hasValidWordTimings, isSubtitleTrackStyle, timedWordsForCue, type SubtitleCue, type SubtitleSettings, type SubtitleTrackStyle } from "@/lib/subtitles";
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(request);
@@ -14,11 +14,13 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     translationStyle?: SubtitleTrackStyle;
   };
   if (!cues?.length || cues.some((cue, index) => cue.cue_index !== index || cue.start_ms < 0 || cue.end_ms <= cue.start_ms
-    || !cue.text.trim() || (cue.translated_text != null && !cue.translated_text.trim()))) {
+    || !cue.text.trim() || (cue.translated_text != null && !cue.translated_text.trim()) || (cue.words != null && !hasValidWordTimings(cue.words)))) {
     return NextResponse.json({ error: "Subtitle cues are invalid." }, { status: 400 });
   }
   if (settings && (!isSubtitleTrackStyle(settings)
-    || !Number.isInteger(settings.words_per_cue) || settings.words_per_cue < 2 || settings.words_per_cue > 16)) {
+    || !Number.isInteger(settings.words_per_cue) || settings.words_per_cue < 2 || settings.words_per_cue > 16
+    || typeof settings.karaoke_enabled !== "boolean" || typeof settings.karaoke_color !== "string"
+    || !/^#[0-9a-f]{6}$/i.test(settings.karaoke_color))) {
     return NextResponse.json({ error: "Subtitle appearance settings are invalid." }, { status: 400 });
   }
   if (translationStyle && !isSubtitleTrackStyle(translationStyle)) {
@@ -49,6 +51,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   const { error } = await db.from("subtitle_cues").insert(cues.map((cue, index) => ({
     video_id: id, cue_index: index, start_ms: Math.round(cue.start_ms), end_ms: Math.round(cue.end_ms), text: cue.text.trim(),
     translated_text: cue.translated_text?.trim() || null,
+    words: timedWordsForCue(cue),
   })));
   if (error) return NextResponse.json({ error: "Could not save subtitles." }, { status: 500 });
   const { error: videoError } = await db.from("videos").update({
@@ -66,6 +69,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       subtitle_backdrop_color: settings.backdrop_color,
       subtitle_backdrop_opacity: settings.backdrop_opacity,
       words_per_cue: settings.words_per_cue,
+      karaoke_enabled: settings.karaoke_enabled,
+      karaoke_color: settings.karaoke_color,
     } : {}),
     ...(translationStyle ? {
       translation_font_family: translationStyle.font_family,

@@ -91,7 +91,7 @@ export async function deleteSonioxFile(id: string) {
 export function tokensToSubtitleCues(tokens: SonioxToken[]) {
   const spoken = tokens.filter((token) => !token.is_audio_event && token.translation_status !== "translation"
     && token.text.trim() && typeof token.start_ms === "number" && typeof token.end_ms === "number" && token.end_ms > token.start_ms);
-  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string }> = [];
+  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; words: Array<{ text: string; start_ms: number; end_ms: number }> }> = [];
   let group: SonioxToken[] = [];
 
   const flush = () => {
@@ -101,6 +101,7 @@ export function tokensToSubtitleCues(tokens: SonioxToken[]) {
       start_ms: group[0].start_ms!,
       end_ms: Math.max(group[0].start_ms! + 1, group.at(-1)!.end_ms!),
       text: group.map((token) => token.text).join("").trim(),
+      words: group.map((token) => ({ text: token.text, start_ms: token.start_ms!, end_ms: token.end_ms! })),
     });
     group = [];
   };
@@ -117,7 +118,7 @@ export function tokensToSubtitleCues(tokens: SonioxToken[]) {
 }
 
 export function tokensToBilingualCues(tokens: SonioxToken[]) {
-  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; translated_text: string }> = [];
+  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; translated_text: string; words: Array<{ text: string; start_ms: number; end_ms: number }> }> = [];
   let original: SonioxToken[] = [];
   let translation: SonioxToken[] = [];
 
@@ -130,6 +131,7 @@ export function tokensToBilingualCues(tokens: SonioxToken[]) {
       end_ms: Math.max(original[0].start_ms! + 1, original.at(-1)!.end_ms!),
       text: original.map((token) => token.text).join("").trim(),
       translated_text: translatedText,
+      words: original.map((token) => ({ text: token.text, start_ms: token.start_ms!, end_ms: token.end_ms! })),
     });
     original = [];
     translation = [];
