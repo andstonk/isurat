@@ -9,10 +9,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   const db = createAdminSupabase();
-  const { data: video } = await db.from("videos").select("id, file_name, blob_name, status, language, duration_ms, transcript, translation_target_language, translation_status, subtitle_font_family, subtitle_font_source, subtitle_user_font_id, subtitle_text_color, subtitle_font_size, subtitle_bold, subtitle_italic, subtitle_underline, subtitle_strikethrough, subtitle_backdrop_color, subtitle_backdrop_opacity, translation_font_family, translation_font_source, translation_user_font_id, translation_text_color, translation_font_size, translation_bold, translation_italic, translation_underline, translation_strikethrough, translation_backdrop_color, translation_backdrop_opacity, words_per_cue, karaoke_enabled, karaoke_color")
+  const { data: video } = await db.from("videos").select("id, file_name, blob_name, status, language, duration_ms, transcript, translation_target_language, translation_status, subtitle_font_family, subtitle_font_source, subtitle_user_font_id, subtitle_text_color, subtitle_font_size, subtitle_bold, subtitle_italic, subtitle_underline, subtitle_strikethrough, subtitle_backdrop_color, subtitle_backdrop_opacity, subtitle_glow_enabled, subtitle_glow_color, subtitle_glow_blur, subtitle_glow_intensity, translation_font_family, translation_font_source, translation_user_font_id, translation_text_color, translation_font_size, translation_bold, translation_italic, translation_underline, translation_strikethrough, translation_backdrop_color, translation_backdrop_opacity, translation_glow_enabled, translation_glow_color, translation_glow_blur, translation_glow_intensity, words_per_cue, karaoke_enabled, karaoke_color")
     .eq("id", id).eq("user_id", user.id).single();
   if (!video) return NextResponse.json({ error: "Video not found." }, { status: 404 });
-  const { data: cues, error } = await db.from("subtitle_cues").select("id, cue_index, start_ms, end_ms, text, translated_text, words")
+  const { data: cues, error } = await db.from("subtitle_cues").select("id, cue_index, start_ms, end_ms, text, translated_text, words, style_override")
     .eq("video_id", id).order("cue_index");
   if (error) return NextResponse.json({ error: "Could not load subtitles." }, { status: 500 });
   const playbackUrl = await getVideoContainer().getBlockBlobClient(video.blob_name).generateSasUrl({

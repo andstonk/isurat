@@ -14,7 +14,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     translationStyle?: SubtitleTrackStyle;
   };
   if (!cues?.length || cues.some((cue, index) => cue.cue_index !== index || cue.start_ms < 0 || cue.end_ms <= cue.start_ms
-    || !cue.text.trim() || (cue.translated_text != null && !cue.translated_text.trim()) || (cue.words != null && !hasValidWordTimings(cue.words)))) {
+    || !cue.text.trim() || (cue.translated_text != null && !cue.translated_text.trim()) || (cue.words != null && !hasValidWordTimings(cue.words))
+    || (cue.style_override != null && !isSubtitleTrackStyle(cue.style_override)))) {
     return NextResponse.json({ error: "Subtitle cues are invalid." }, { status: 400 });
   }
   if (settings && (!isSubtitleTrackStyle(settings)
@@ -43,6 +44,11 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     if (translationStyle && !await validateFontSelection(translationStyle, video.translation_user_font_id)) {
       return NextResponse.json({ error: "The selected translation font is unavailable." }, { status: 400 });
     }
+    for (const cue of cues) {
+      if (cue.style_override && !await validateFontSelection(cue.style_override, video.subtitle_user_font_id)) {
+        return NextResponse.json({ error: `The font selected for subtitle ${cue.cue_index + 1} is unavailable.` }, { status: 400 });
+      }
+    }
   } catch (error) {
     console.error("Font selection validation failed", error);
     return NextResponse.json({ error: "Could not validate the selected font. Try again." }, { status: 503 });
@@ -52,6 +58,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     video_id: id, cue_index: index, start_ms: Math.round(cue.start_ms), end_ms: Math.round(cue.end_ms), text: cue.text.trim(),
     translated_text: cue.translated_text?.trim() || null,
     words: timedWordsForCue(cue),
+    style_override: cue.style_override ?? null,
   })));
   if (error) return NextResponse.json({ error: "Could not save subtitles." }, { status: 500 });
   const { error: videoError } = await db.from("videos").update({
@@ -68,6 +75,10 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       subtitle_strikethrough: settings.strikethrough,
       subtitle_backdrop_color: settings.backdrop_color,
       subtitle_backdrop_opacity: settings.backdrop_opacity,
+      subtitle_glow_enabled: settings.glow_enabled,
+      subtitle_glow_color: settings.glow_color,
+      subtitle_glow_blur: settings.glow_blur,
+      subtitle_glow_intensity: settings.glow_intensity,
       words_per_cue: settings.words_per_cue,
       karaoke_enabled: settings.karaoke_enabled,
       karaoke_color: settings.karaoke_color,
@@ -84,6 +95,10 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       translation_strikethrough: translationStyle.strikethrough,
       translation_backdrop_color: translationStyle.backdrop_color,
       translation_backdrop_opacity: translationStyle.backdrop_opacity,
+      translation_glow_enabled: translationStyle.glow_enabled,
+      translation_glow_color: translationStyle.glow_color,
+      translation_glow_blur: translationStyle.glow_blur,
+      translation_glow_intensity: translationStyle.glow_intensity,
     } : {}),
     updated_at: new Date().toISOString(),
   }).eq("id", id);

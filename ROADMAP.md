@@ -49,10 +49,14 @@ Deliverables:
 - Cue split/merge tools
 - Search and replace across cues
 - Readability validator (CPS/WPM warnings and duration checks)
+- Cue-level style overrides so every subtitle line can use different fonts, colors, sizes, and formatting
+- Word-level emphasis controls for bold, italic, underline, and custom text color
+- Style inheritance model: word override -> cue override -> project default
 
 Exit criteria:
 - 30% fewer manual editing actions on common test projects
 - No regression in subtitle save performance
+- Per-cue and per-word formatting persists after saving, reloading, and regrouping cues
 
 ## Phase 2 (Weeks 6-7): Import and Export Expansion
 
@@ -93,11 +97,14 @@ Deliverables:
 - Burned-in subtitle MP4 export (server-side render pipeline)
 - Preset style packs (cinematic, social short-form, accessibility)
 - Position/alignment controls with safe-title guides
+- Customizable text glow controls (enabled, color, blur radius, and intensity)
+- Preview/render parity for project, cue, and word-level style overrides
 - Optional speaker labels and accessibility markers
 
 Exit criteria:
 - Burn-in export works for target max file size and duration
 - Presets are reusable across projects
+- Glow and formatting effects match between editor preview and rendered video output
 
 ## Phase 5 (Weeks 14-16): Growth, Analytics, and Hardening
 
@@ -121,6 +128,16 @@ Exit criteria:
 - Documentation: README and environment setup updates
 - Observability: logs, alerts, and error budgets
 - UX: mobile/responsive editor quality improvements
+
+## Subtitle Styling Architecture
+
+Implement advanced styling as a three-level cascade:
+
+1. Project defaults stored on the video record
+2. Cue overrides stored as `subtitle_cues.style_override` JSON
+3. Word overrides stored inside each item in `subtitle_cues.words` JSON
+
+Word overrides take precedence over cue overrides, and cue overrides take precedence over project defaults. Validate all JSON style properties on the server and preserve overrides when cues are split, merged, or regrouped.
 
 ## Timeline Risk Buffer
 
@@ -148,6 +165,9 @@ Exit criteria:
 ## Estimated Effort by Feature Group
 
 - Editor productivity suite: 2.5 to 3.5 weeks
+- Cue-level style overrides: 3 to 5 days
+- Word-level emphasis controls: 3 to 5 days
+- Customizable glow effects: 2 to 3 days for preview; add 2 to 4 days for rendered-video parity
 - Import parser and validation: 1.5 to 2 weeks
 - Versioning and sharing: 2 to 3 weeks
 - Burn-in rendering pipeline: 2.5 to 4 weeks

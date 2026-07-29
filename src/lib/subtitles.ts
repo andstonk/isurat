@@ -8,12 +8,21 @@ export type SubtitleCue = {
   text: string;
   translated_text?: string | null;
   words?: SubtitleWord[] | null;
+  style_override?: SubtitleTrackStyle | null;
+};
+
+export type SubtitleWordStyle = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  text_color?: string;
 };
 
 export type SubtitleWord = {
   text: string;
   start_ms: number;
   end_ms: number;
+  style?: SubtitleWordStyle;
 };
 
 export const TRANSLATION_LANGUAGES = [
@@ -71,6 +80,10 @@ export type SubtitleTrackStyle = {
   strikethrough: boolean;
   backdrop_color: string;
   backdrop_opacity: number;
+  glow_enabled: boolean;
+  glow_color: string;
+  glow_blur: number;
+  glow_intensity: number;
 };
 
 export type SubtitleSettings = SubtitleTrackStyle & {
@@ -91,6 +104,10 @@ export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
   strikethrough: false,
   backdrop_color: "#000000",
   backdrop_opacity: 82,
+  glow_enabled: false,
+  glow_color: "#A78BFA",
+  glow_blur: 8,
+  glow_intensity: 50,
   words_per_cue: 8,
   karaoke_enabled: false,
   karaoke_color: "#A78BFA",
@@ -108,6 +125,10 @@ export const DEFAULT_TRANSLATION_STYLE: SubtitleTrackStyle = {
   strikethrough: false,
   backdrop_color: "#000000",
   backdrop_opacity: 82,
+  glow_enabled: false,
+  glow_color: "#A78BFA",
+  glow_blur: 8,
+  glow_intensity: 50,
 };
 
 export function isSubtitleFont(value: unknown): value is SubtitleFont {
@@ -128,7 +149,22 @@ export function isSubtitleTrackStyle(value: unknown): value is SubtitleTrackStyl
     && typeof style.bold === "boolean" && typeof style.italic === "boolean"
     && typeof style.underline === "boolean" && typeof style.strikethrough === "boolean"
     && typeof style.backdrop_color === "string" && /^#[0-9a-f]{6}$/i.test(style.backdrop_color)
-    && Number.isInteger(style.backdrop_opacity) && Number(style.backdrop_opacity) >= 0 && Number(style.backdrop_opacity) <= 100;
+    && Number.isInteger(style.backdrop_opacity) && Number(style.backdrop_opacity) >= 0 && Number(style.backdrop_opacity) <= 100
+    && typeof style.glow_enabled === "boolean"
+    && typeof style.glow_color === "string" && /^#[0-9a-f]{6}$/i.test(style.glow_color)
+    && Number.isInteger(style.glow_blur) && Number(style.glow_blur) >= 0 && Number(style.glow_blur) <= 40
+    && Number.isInteger(style.glow_intensity) && Number(style.glow_intensity) >= 0 && Number(style.glow_intensity) <= 100;
+}
+
+export function isSubtitleWordStyle(value: unknown): value is SubtitleWordStyle {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const style = value as Record<string, unknown>;
+  const keys = Object.keys(style);
+  return keys.length > 0 && keys.every((key) => ["bold", "italic", "underline", "text_color"].includes(key))
+    && (style.bold === undefined || typeof style.bold === "boolean")
+    && (style.italic === undefined || typeof style.italic === "boolean")
+    && (style.underline === undefined || typeof style.underline === "boolean")
+    && (style.text_color === undefined || typeof style.text_color === "string" && /^#[0-9a-f]{6}$/i.test(style.text_color));
 }
 
 export function hasValidWordTimings(value: unknown): value is SubtitleWord[] {
@@ -137,7 +173,8 @@ export function hasValidWordTimings(value: unknown): value is SubtitleWord[] {
     const item = word as Record<string, unknown>;
     return typeof item.text === "string" && item.text.trim().length > 0 && item.text.length <= 200
       && Number.isFinite(item.start_ms) && Number.isFinite(item.end_ms)
-      && Number(item.start_ms) >= 0 && Number(item.end_ms) > Number(item.start_ms);
+      && Number(item.start_ms) >= 0 && Number(item.end_ms) > Number(item.start_ms)
+      && (item.style === undefined || isSubtitleWordStyle(item.style));
   });
 }
 
@@ -150,6 +187,7 @@ export function timedWordsForCue(cue: SubtitleCue): SubtitleWord[] {
         text: word.text,
         start_ms: startMs,
         end_ms: Math.max(startMs + 1, Math.min(cue.end_ms, Math.round(word.end_ms))),
+        ...(word.style ? { style: word.style } : {}),
       };
     });
   }

@@ -29,6 +29,7 @@ supabase/migrations/002_create_subtitle_mvp.sql
 supabase/migrations/003_add_subtitle_customization.sql
 supabase/migrations/004_add_user_fonts.sql
 supabase/migrations/005_add_karaoke_subtitles.sql
+supabase/migrations/006_add_advanced_subtitle_styles.sql
 ```
 
 The migration enables Row Level Security and creates no public policies. Browser clients cannot read or write the table; submissions are handled only by the server API route.
@@ -60,6 +61,8 @@ Each user can keep up to 50 active private fonts. WOFF2, WOFF, TTF, and OTF file
 Google and uploaded font choices affect the editor preview and saved project settings. SRT, VTT, and TXT are text-only formats, so those downloads intentionally do not contain styling or font files.
 
 Karaoke highlighting uses Soniox word-level timestamps for newly processed videos. Existing or manually edited cues fall back to evenly distributed word timing within each cue. The effect is saved with the project and shown in the editor preview; text-only subtitle exports do not preserve the highlight color.
+
+Advanced styling supports customizable text glow, full appearance overrides for individual subtitle cues, and bold, italic, underline, or color emphasis for individual words. These visual effects are saved with the project and shown in the editor preview, but text-only SRT, VTT, and TXT exports do not preserve them.
 
 ### 4. Configure authentication providers
 
