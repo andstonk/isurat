@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/api-auth";
+import { isGoogleFontFamily } from "@/lib/google-fonts";
 import { createAdminSupabase } from "@/lib/supabase";
 import { isSubtitleTrackStyle, type SubtitleCue, type SubtitleSettings, type SubtitleTrackStyle } from "@/lib/subtitles";
 
@@ -24,8 +25,26 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     return NextResponse.json({ error: "Translation appearance settings are invalid." }, { status: 400 });
   }
   const db = createAdminSupabase();
-  const { data: video } = await db.from("videos").select("id").eq("id", id).eq("user_id", user.id).single();
+  const { data: video } = await db.from("videos").select("id, subtitle_user_font_id, translation_user_font_id").eq("id", id).eq("user_id", user.id).single();
   if (!video) return NextResponse.json({ error: "Video not found." }, { status: 404 });
+  const validateFontSelection = async (style: SubtitleTrackStyle, attachedFontId: string | null) => {
+    if (style.font_source === "system") return true;
+    if (style.font_source === "google") return isGoogleFontFamily(style.font_family);
+    const { data: font } = await db.from("user_fonts").select("id, archived_at")
+      .eq("id", style.user_font_id!).eq("user_id", user.id).maybeSingle();
+    return Boolean(font && (!font.archived_at || font.id === attachedFontId));
+  };
+  try {
+    if (settings && !await validateFontSelection(settings, video.subtitle_user_font_id)) {
+      return NextResponse.json({ error: "The selected original subtitle font is unavailable." }, { status: 400 });
+    }
+    if (translationStyle && !await validateFontSelection(translationStyle, video.translation_user_font_id)) {
+      return NextResponse.json({ error: "The selected translation font is unavailable." }, { status: 400 });
+    }
+  } catch (error) {
+    console.error("Font selection validation failed", error);
+    return NextResponse.json({ error: "Could not validate the selected font. Try again." }, { status: 503 });
+  }
   await db.from("subtitle_cues").delete().eq("video_id", id);
   const { error } = await db.from("subtitle_cues").insert(cues.map((cue, index) => ({
     video_id: id, cue_index: index, start_ms: Math.round(cue.start_ms), end_ms: Math.round(cue.end_ms), text: cue.text.trim(),
@@ -36,6 +55,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     transcript: cues.map((cue) => cue.text.trim()).join(" "),
     ...(settings ? {
       subtitle_font_family: settings.font_family,
+      subtitle_font_source: settings.font_source,
+      subtitle_user_font_id: settings.user_font_id,
       subtitle_text_color: settings.text_color,
       subtitle_font_size: settings.font_size,
       subtitle_bold: settings.bold,
@@ -48,6 +69,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     } : {}),
     ...(translationStyle ? {
       translation_font_family: translationStyle.font_family,
+      translation_font_source: translationStyle.font_source,
+      translation_user_font_id: translationStyle.user_font_id,
       translation_text_color: translationStyle.text_color,
       translation_font_size: translationStyle.font_size,
       translation_bold: translationStyle.bold,

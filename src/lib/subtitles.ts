@@ -1,3 +1,5 @@
+import { isFontSource, type FontSource } from "@/lib/fonts";
+
 export type SubtitleCue = {
   id?: number;
   cue_index: number;
@@ -51,7 +53,9 @@ export const SUBTITLE_FONTS = [
 export type SubtitleFont = (typeof SUBTITLE_FONTS)[number];
 
 export type SubtitleTrackStyle = {
-  font_family: SubtitleFont;
+  font_family: string;
+  font_source: FontSource;
+  user_font_id: string | null;
   text_color: string;
   font_size: number;
   bold: boolean;
@@ -68,6 +72,8 @@ export type SubtitleSettings = SubtitleTrackStyle & {
 
 export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
   font_family: "Arial",
+  font_source: "system",
+  user_font_id: null,
   text_color: "#FFFFFF",
   font_size: 23,
   bold: true,
@@ -81,6 +87,8 @@ export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
 
 export const DEFAULT_TRANSLATION_STYLE: SubtitleTrackStyle = {
   font_family: "Arial",
+  font_source: "system",
+  user_font_id: null,
   text_color: "#D8CEFF",
   font_size: 19,
   bold: false,
@@ -98,7 +106,12 @@ export function isSubtitleFont(value: unknown): value is SubtitleFont {
 export function isSubtitleTrackStyle(value: unknown): value is SubtitleTrackStyle {
   if (!value || typeof value !== "object") return false;
   const style = value as Record<string, unknown>;
-  return isSubtitleFont(style.font_family)
+  const validSelection = isFontSource(style.font_source)
+    && typeof style.font_family === "string" && style.font_family.trim().length >= 1 && style.font_family.length <= 100
+    && (style.font_source === "system" ? isSubtitleFont(style.font_family) && style.user_font_id === null
+      : style.font_source === "google" ? style.user_font_id === null
+        : typeof style.user_font_id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(style.user_font_id));
+  return validSelection
     && typeof style.text_color === "string" && /^#[0-9a-f]{6}$/i.test(style.text_color)
     && Number.isInteger(style.font_size) && Number(style.font_size) >= 12 && Number(style.font_size) <= 64
     && typeof style.bold === "boolean" && typeof style.italic === "boolean"

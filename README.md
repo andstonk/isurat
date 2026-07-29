@@ -1,6 +1,6 @@
 # Subframe
 
-A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, style each subtitle track independently, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
+A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, style each subtitle track independently with system, Google, or private uploaded fonts, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
 
 ## Stack
 
@@ -27,6 +27,7 @@ Create a Supabase project, open its SQL editor, then paste and run the SQL conte
 supabase/migrations/001_create_waitlist.sql
 supabase/migrations/002_create_subtitle_mvp.sql
 supabase/migrations/003_add_subtitle_customization.sql
+supabase/migrations/004_add_user_fonts.sql
 ```
 
 The migration enables Row Level Security and creates no public policies. Browser clients cannot read or write the table; submissions are handled only by the server API route.
@@ -44,11 +45,18 @@ AZURE_STORAGE_CONNECTION_STRING=your-connection-string
 AZURE_STORAGE_CONTAINER=videos
 SONIOX_API_KEY=your-soniox-api-key
 SONIOX_TRANSCRIPTION_MODEL=stt-async-v5
+GOOGLE_FONTS_API_KEY=your-google-fonts-developer-api-key
 # Optional; change this for your Soniox project region.
 SONIOX_API_BASE_URL=https://api.soniox.com/v1
 ```
 
-Find Supabase values in project settings under API. Use the browser-safe `sb_publishable_...` key for `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; legacy projects may instead use `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Create the Soniox API key in the Soniox Console. The Supabase service role key, Azure connection string, and Soniox API key must remain server-only. Configure the Azure container CORS policy to allow browser `PUT` requests from the application origin and expose `ETag` and `x-ms-*` headers.
+Find Supabase values in project settings under API. Use the browser-safe `sb_publishable_...` key for `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; legacy projects may instead use `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Create the Soniox API key in the Soniox Console. Enable the Web Fonts Developer API in Google Cloud and create an API key for `GOOGLE_FONTS_API_KEY`. The Supabase service role key, Azure connection string, Soniox API key, and Google Fonts key must remain server-only. Configure the Azure container CORS policy to allow browser `PUT` and `GET` requests from the application origin and expose `ETag` and `x-ms-*` headers. Font previews require Azure `GET` CORS access in every local, preview, and production environment.
+
+### Custom fonts
+
+Each user can keep up to 50 active private fonts. WOFF2, WOFF, TTF, and OTF files up to 5 MB are accepted after server-side signature and MIME validation. Uploaders must confirm they have the right or license to use each font. Archiving removes a font from new selections while preserving it for saved projects that already reference it.
+
+Google and uploaded font choices affect the editor preview and saved project settings. SRT, VTT, and TXT are text-only formats, so those downloads intentionally do not contain styling or font files.
 
 ### 4. Configure authentication providers
 
