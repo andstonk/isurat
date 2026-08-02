@@ -39,7 +39,9 @@ Three levels, word overrides beating cue overrides beating project defaults:
 2. **Cue overrides** — `subtitle_cues.style_override` (jsonb, validated by `isSubtitleTrackStyle`). Applied to the cue's container element in the editor preview.
 3. **Word overrides** — `subtitle_cues.words[].style` (jsonb, validated by `isSubtitleWordStyle`). Applied as an inline style on each word's `<span>`, so it visually overrides both cue and project styling.
 
-Known gap (tracked on the roadmap, not yet fixed): `resegmentCues()` (`src/lib/subtitles.ts`) preserves word-level styles when cues are regrouped by word limit, but drops cue-level `style_override` on the regrouped cues. There is no manual split/merge feature yet, so today this is only reachable via "Apply word limit" in the editor.
+Known gap (tracked on the roadmap, not yet fixed): `resegmentCues()` (`src/lib/subtitles.ts`) preserves word-level styles when cues are regrouped by word limit, but drops cue-level `style_override` on the regrouped cues. That gap is specific to "Apply word limit"; the manual split/merge tools below take a different path and don't have it.
+
+**Manual split/merge**: the editor (`src/components/subtitle-editor.tsx`) also lets a creator split one cue into two (pick a word boundary; timing, per-word styles, and `style_override` all carry over to both halves, with `translated_text` divided proportionally by word count) or merge a cue into the next one (concatenates text/`translated_text`/words, keeps the first cue's `style_override`). Both renumber `cue_index` for the whole array afterward, same as `resegmentCues()`. A bulk timestamp shift (+/- ms or sec, applied to every cue and word timing, clamped so no affected cue's `start_ms` goes below 0) lives alongside these in the cue pane's toolbar; each cue row has a checkbox, and when any are checked the shift applies only to that subset (clamped against their own earliest `start_ms`) instead of the whole track.
 
 ## Error telemetry
 

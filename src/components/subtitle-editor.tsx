@@ -135,6 +135,10 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   const [fontLibraryOpen, setFontLibraryOpen] = useState(false);
   const [expandedCue, setExpandedCue] = useState<number | null>(null);
   const [selectedWord, setSelectedWord] = useState<{ cueIndex: number; wordIndex: number } | null>(null);
+  const [splitCueIndex, setSplitCueIndex] = useState<number | null>(null);
+  const [shiftAmount, setShiftAmount] = useState(1);
+  const [shiftUnit, setShiftUnit] = useState<"ms" | "s">("s");
+  const [selectedCues, setSelectedCues] = useState<Set<number>>(new Set());
   const [fontMessage, setFontMessage] = useState("");
   const [subtitleMode, setSubtitleMode] = useState<SubtitleExportMode>("original");
   const [time, setTime] = useState(0);
@@ -229,6 +233,7 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
       glow_intensity: loadedVideo.translation_glow_intensity ?? DEFAULT_TRANSLATION_STYLE.glow_intensity,
       },
     });
+    setSelectedCues(new Set());
     setMessage("");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- doc.reset has a stable identity; depending on the whole `doc` object would recreate `load` (and retrigger the fetch effect below) every render
   }, [router, token, videoId, doc.reset]);
@@ -290,6 +295,79 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     doc.set((current) => ({ ...current, cues: resegmentCues(current.cues, current.settings.words_per_cue) }), { immediate: true });
     setMessage(`Subtitles regrouped to ${settings.words_per_cue} words maximum. Save to keep changes.`);
   }
+  function toggleCueSelection(index: number) {
+    setSelectedCues((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
+  }
+  function shiftAllTimestamps(rawAmount: number) {
+    const shiftMs = shiftUnit === "s" ? rawAmount * 1000 : rawAmount;
+    if (!shiftMs) return;
+    const targetIndexes = selectedCues;
+    doc.set((current) => {
+      const targets = targetIndexes.size > 0 ? current.cues.filter((_, index) => targetIndexes.has(index)) : current.cues;
+      if (!targets.length) return current;
+      const minStart = Math.min(...targets.map((cue) => cue.start_ms));
+      const effectiveShift = Math.max(shiftMs, -minStart);
+      if (!effectiveShift) return current;
+      return {
+        ...current,
+        cues: current.cues.map((cue, index) => targetIndexes.size > 0 && !targetIndexes.has(index) ? cue : {
+          ...cue,
+          start_ms: cue.start_ms + effectiveShift,
+          end_ms: cue.end_ms + effectiveShift,
+          words: cue.words?.map((word) => ({ ...word, start_ms: word.start_ms + effectiveShift, end_ms: word.end_ms + effectiveShift })),
+        }),
+      };
+    }, { immediate: true });
+    setMessage(targetIndexes.size > 0 ? `Shifted ${targetIndexes.size} selected cue${targetIndexes.size === 1 ? "" : "s"}. Save to keep changes.` : "Shifted all timestamps. Save to keep changes.");
+  }
+  function splitCue(cueIndex: number, wordIndex: number) {
+    doc.set((current) => {
+      const cue = current.cues[cueIndex];
+      const words = timedWordsForCue(cue);
+      if (wordIndex <= 0 || wordIndex >= words.length) return current;
+      const firstWords = words.slice(0, wordIndex);
+      const secondWords = words.slice(wordIndex);
+      const splitMs = Math.max(cue.start_ms + 1, Math.min(cue.end_ms - 1, secondWords[0].start_ms));
+      let firstTranslated: string | null = null;
+      let secondTranslated: string | null = null;
+      if (cue.translated_text?.trim()) {
+        const translatedWords = cue.translated_text.trim().split(/\s+/).filter(Boolean);
+        const splitAt = Math.round(translatedWords.length * wordIndex / words.length);
+        firstTranslated = translatedWords.slice(0, splitAt).join(" ") || null;
+        secondTranslated = translatedWords.slice(splitAt).join(" ") || null;
+      }
+      const first: SubtitleCue = { ...cue, id: undefined, end_ms: splitMs, text: firstWords.map((word) => word.text).join("").trim(), translated_text: firstTranslated, words: firstWords };
+      const second: SubtitleCue = { ...cue, id: undefined, start_ms: splitMs, text: secondWords.map((word) => word.text).join("").trim(), translated_text: secondTranslated, words: secondWords };
+      const cues = [...current.cues.slice(0, cueIndex), first, second, ...current.cues.slice(cueIndex + 1)]
+        .map((cue, index) => ({ ...cue, cue_index: index }));
+      return { ...current, cues };
+    }, { immediate: true });
+    setSplitCueIndex(null); setExpandedCue(null); setSelectedWord(null); setSelectedCues(new Set());
+    setMessage("Cue split into two. Save to keep changes.");
+  }
+  function mergeWithNext(cueIndex: number) {
+    doc.set((current) => {
+      const cue = current.cues[cueIndex];
+      const next = current.cues[cueIndex + 1];
+      if (!next) return current;
+      const merged: SubtitleCue = {
+        ...cue,
+        end_ms: next.end_ms,
+        text: [cue.text.trim(), next.text.trim()].filter(Boolean).join(" "),
+        translated_text: [cue.translated_text?.trim(), next.translated_text?.trim()].filter(Boolean).join(" ") || null,
+        words: [...timedWordsForCue(cue), ...timedWordsForCue(next)],
+      };
+      const cues = [...current.cues.slice(0, cueIndex), merged, ...current.cues.slice(cueIndex + 2)]
+        .map((cue, index) => ({ ...cue, cue_index: index }));
+      return { ...current, cues };
+    }, { immediate: true });
+    setSplitCueIndex(null); setExpandedCue(null); setSelectedWord(null); setSelectedCues(new Set());
+    setMessage("Cues merged. Save to keep changes.");
+  }
   async function download(format: string) {
     const accessToken = await token();
     const response = await fetch(`/api/videos/${videoId}/export?format=${format}&mode=${subtitleMode}`, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -317,5 +395,7 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
       </div></div>
       {hasTranslation && <div className="subtitle-controls translation-controls"><div className="controls-heading"><div><span className="section-label">TRANSLATION APPEARANCE</span><h2>{targetLanguage} subtitle style</h2></div><small>Styled independently</small></div><TrackStyleControls style={translationStyle} name={targetLanguage} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={patchTranslationStyle} /></div>}
       </section>
-    <section className="cue-pane"><div className="cue-head"><b>{cues.length} subtitle cues</b><span>{hasTranslation ? `${video?.language?.toUpperCase() ?? "AUTO"} + ${video?.translation_target_language?.toUpperCase()}` : video?.language?.toUpperCase() ?? "AUTO"}</span></div>{cues.map((cue, index) => <article className={`cue-row ${activeCue?.cue_index === cue.cue_index ? "active" : ""}`} key={cue.id ?? index} onClick={() => { if (videoRef.current) videoRef.current.currentTime = cue.start_ms / 1000; }}><span className="cue-number">{index + 1}</span><div className="time-fields"><input aria-label="Start time in milliseconds" type="number" min="0" value={cue.start_ms} onChange={(e) => update(index, { start_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><span>→</span><input aria-label="End time in milliseconds" type="number" min="1" value={cue.end_ms} onChange={(e) => update(index, { end_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div><div className="cue-text-fields"><label><small>Original</small><textarea aria-label={`Original subtitle ${index + 1}`} value={cue.text} onChange={(e) => update(index, { text: e.target.value })} onBlur={doc.commitPending} /></label>{cue.translated_text != null && <label><small>{targetLanguage}</small><textarea aria-label={`${targetLanguage} subtitle ${index + 1}`} value={cue.translated_text} onChange={(e) => update(index, { translated_text: e.target.value })} onBlur={doc.commitPending} /></label>}<button type="button" className="cue-style-toggle" onClick={(event) => { event.stopPropagation(); setExpandedCue((current) => current === index ? null : index); setSelectedWord(null); }}>{expandedCue === index ? "Hide styling" : cue.style_override || cue.words?.some((word) => word.style) ? "Edit custom styling" : "Customize this line"}</button></div>{expandedCue === index && <div className="cue-style-editor" onClick={(event) => event.stopPropagation()}><div className="cue-style-heading"><b>Line appearance</b>{cue.style_override && <button type="button" onClick={() => update(index, { style_override: null }, true)}>Use project style</button>}</div><TrackStyleControls style={cue.style_override ?? settings} name={`Subtitle ${index + 1}`} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style, immediate) => update(index, { style_override: style }, immediate)} /><div className="word-style-editor"><b>Word emphasis</b><small>Select a word, then apply formatting.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} className={`${selectedWord?.cueIndex === index && selectedWord.wordIndex === wordIndex ? "selected" : ""} ${word.style ? "customized" : ""}`} onClick={() => setSelectedWord({ cueIndex: index, wordIndex })}>{word.text.trim()}</button>)}</div>{selectedWord?.cueIndex === index && <div className="word-format-controls"><button type="button" aria-label="Bold selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { bold: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.bold }, true)}><b>B</b></button><button type="button" aria-label="Italicize selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { italic: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.italic }, true)}><i>I</i></button><button type="button" aria-label="Underline selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { underline: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.underline }, true)}><u>U</u></button><input aria-label="Selected word color" type="color" value={timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.text_color ?? (cue.style_override ?? settings).text_color} onChange={(event) => updateWordStyle(index, selectedWord.wordIndex, { text_color: event.target.value })} /><button type="button" className="clear-word-style" onClick={() => updateWordStyle(index, selectedWord.wordIndex, null, true)}>Clear</button></div>}</div></div>}</article>)}</section></div>{fontLibraryOpen && <FontLibraryPanel fonts={userFonts.filter((font) => !font.archivedAt)} quota={fontQuota} getToken={token} onClose={() => setFontLibraryOpen(false)} onChanged={loadFontLibrary} />}</div></AppShell>;
+    <section className="cue-pane"><div className="cue-head"><b>{cues.length} subtitle cues</b><span>{hasTranslation ? `${video?.language?.toUpperCase() ?? "AUTO"} + ${video?.translation_target_language?.toUpperCase()}` : video?.language?.toUpperCase() ?? "AUTO"}</span></div>
+      <div className="cue-bulk-tools"><span>{selectedCues.size > 0 ? `Shift ${selectedCues.size} selected cue${selectedCues.size === 1 ? "" : "s"}` : "Shift all timestamps"}</span><input aria-label="Timestamp shift amount" type="number" min="0" step="any" value={shiftAmount} onChange={(event) => setShiftAmount(Number(event.target.value))} /><select aria-label="Timestamp shift unit" value={shiftUnit} onChange={(event) => setShiftUnit(event.target.value as "ms" | "s")}><option value="s">sec</option><option value="ms">ms</option></select><button type="button" className="secondary-button small" onClick={() => shiftAllTimestamps(-shiftAmount)}>◂ Earlier</button><button type="button" className="secondary-button small" onClick={() => shiftAllTimestamps(shiftAmount)}>Later ▸</button>{selectedCues.size > 0 && <button type="button" className="clear-selection" onClick={() => setSelectedCues(new Set())}>Clear selection</button>}</div>
+      {cues.map((cue, index) => <article className={`cue-row ${activeCue?.cue_index === cue.cue_index ? "active" : ""} ${selectedCues.has(index) ? "selected" : ""}`} key={cue.id ?? index} onClick={() => { if (videoRef.current) videoRef.current.currentTime = cue.start_ms / 1000; }}><div className="cue-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select subtitle ${index + 1} for bulk timestamp shift`} checked={selectedCues.has(index)} onChange={() => toggleCueSelection(index)} /><span className="cue-number">{index + 1}</span></div><div className="time-fields"><input aria-label="Start time in milliseconds" type="number" min="0" value={cue.start_ms} onChange={(e) => update(index, { start_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><span>→</span><input aria-label="End time in milliseconds" type="number" min="1" value={cue.end_ms} onChange={(e) => update(index, { end_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div><div className="cue-text-fields"><label><small>Original</small><textarea aria-label={`Original subtitle ${index + 1}`} value={cue.text} onChange={(e) => update(index, { text: e.target.value })} onBlur={doc.commitPending} /></label>{cue.translated_text != null && <label><small>{targetLanguage}</small><textarea aria-label={`${targetLanguage} subtitle ${index + 1}`} value={cue.translated_text} onChange={(e) => update(index, { translated_text: e.target.value })} onBlur={doc.commitPending} /></label>}<button type="button" className="cue-style-toggle" onClick={(event) => { event.stopPropagation(); setExpandedCue((current) => current === index ? null : index); setSelectedWord(null); }}>{expandedCue === index ? "Hide styling" : cue.style_override || cue.words?.some((word) => word.style) ? "Edit custom styling" : "Customize this line"}</button><div className="cue-edit-actions"><button type="button" disabled={timedWordsForCue(cue).length < 2} onClick={(event) => { event.stopPropagation(); setSplitCueIndex((current) => current === index ? null : index); }}>{splitCueIndex === index ? "Cancel split" : "Split"}</button><button type="button" disabled={index === cues.length - 1} onClick={(event) => { event.stopPropagation(); mergeWithNext(index); }}>Merge ↓</button></div>{splitCueIndex === index && <div className="cue-split-picker" onClick={(event) => event.stopPropagation()}><small>Click the word where the new subtitle should begin.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} disabled={wordIndex === 0} onClick={() => splitCue(index, wordIndex)}>{word.text.trim()}</button>)}</div></div>}</div>{expandedCue === index && <div className="cue-style-editor" onClick={(event) => event.stopPropagation()}><div className="cue-style-heading"><b>Line appearance</b>{cue.style_override && <button type="button" onClick={() => update(index, { style_override: null }, true)}>Use project style</button>}</div><TrackStyleControls style={cue.style_override ?? settings} name={`Subtitle ${index + 1}`} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style, immediate) => update(index, { style_override: style }, immediate)} /><div className="word-style-editor"><b>Word emphasis</b><small>Select a word, then apply formatting.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} className={`${selectedWord?.cueIndex === index && selectedWord.wordIndex === wordIndex ? "selected" : ""} ${word.style ? "customized" : ""}`} onClick={() => setSelectedWord({ cueIndex: index, wordIndex })}>{word.text.trim()}</button>)}</div>{selectedWord?.cueIndex === index && <div className="word-format-controls"><button type="button" aria-label="Bold selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { bold: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.bold }, true)}><b>B</b></button><button type="button" aria-label="Italicize selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { italic: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.italic }, true)}><i>I</i></button><button type="button" aria-label="Underline selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { underline: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.underline }, true)}><u>U</u></button><input aria-label="Selected word color" type="color" value={timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.text_color ?? (cue.style_override ?? settings).text_color} onChange={(event) => updateWordStyle(index, selectedWord.wordIndex, { text_color: event.target.value })} /><button type="button" className="clear-word-style" onClick={() => updateWordStyle(index, selectedWord.wordIndex, null, true)}>Clear</button></div>}</div></div>}</article>)}</section></div>{fontLibraryOpen && <FontLibraryPanel fonts={userFonts.filter((font) => !font.archivedAt)} quota={fontQuota} getToken={token} onClose={() => setFontLibraryOpen(false)} onChanged={loadFontLibrary} />}</div></AppShell>;
 }
