@@ -1,5 +1,6 @@
 allowBuilds:
   sharp: false
+  '@ffmpeg-installer/linux-x64': true
 
 overrides:
   eslint-import-resolver-typescript: 3.8.7
