@@ -8,6 +8,7 @@ import { FontPicker } from "@/components/font-picker";
 import { loadGoogleFont, loadUploadedFont, resolvedFontFamily } from "@/lib/font-loader";
 import { isFontSource, type GoogleFont, type UserFont } from "@/lib/fonts";
 import { createBrowserSupabase } from "@/lib/supabase";
+import { useHistoryState } from "@/lib/use-history-state";
 import {
   DEFAULT_SUBTITLE_SETTINGS,
   DEFAULT_TRANSLATION_STYLE,
@@ -29,18 +30,18 @@ function TrackStyleControls({ style, name, googleFonts, userFonts, googleUnavail
   googleFonts: GoogleFont[];
   userFonts: UserFont[];
   googleUnavailable: boolean;
-  onChange: (style: SubtitleTrackStyle) => void;
+  onChange: (style: SubtitleTrackStyle, immediate?: boolean) => void;
   onManageFonts: () => void;
 }) {
-  const patch = (value: Partial<SubtitleTrackStyle>) => onChange({ ...style, ...value });
+  const patch = (value: Partial<SubtitleTrackStyle>, immediate?: boolean) => onChange({ ...style, ...value }, immediate);
   return <div className="control-grid track-style-grid">
-    <FontPicker name={name} style={style} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onChange={patch} onManageFonts={onManageFonts} />
+    <FontPicker name={name} style={style} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onChange={(value) => patch(value, true)} onManageFonts={onManageFonts} />
     <label>Text color<span className="color-control"><input aria-label={`${name} subtitle text color`} type="color" value={style.text_color} onChange={(event) => patch({ text_color: event.target.value })} /><output>{style.text_color.toUpperCase()}</output></span></label>
     <label className="range-control">Font size <output>{style.font_size}px</output><input aria-label={`${name} subtitle font size`} type="range" min="12" max="64" step="1" value={style.font_size} onChange={(event) => patch({ font_size: Number(event.target.value) })} /></label>
-    <div className="control-field formatting-control"><span>Text formatting</span><div className="format-buttons"><button type="button" aria-label={`${name} bold`} aria-pressed={style.bold} className={style.bold ? "active" : ""} onClick={() => patch({ bold: !style.bold })}><b>B</b></button><button type="button" aria-label={`${name} italic`} aria-pressed={style.italic} className={style.italic ? "active" : ""} onClick={() => patch({ italic: !style.italic })}><i>I</i></button><button type="button" aria-label={`${name} underline`} aria-pressed={style.underline} className={style.underline ? "active" : ""} onClick={() => patch({ underline: !style.underline })}><u>U</u></button><button type="button" aria-label={`${name} strikethrough`} aria-pressed={style.strikethrough} className={style.strikethrough ? "active" : ""} onClick={() => patch({ strikethrough: !style.strikethrough })}><s>S</s></button></div></div>
+    <div className="control-field formatting-control"><span>Text formatting</span><div className="format-buttons"><button type="button" aria-label={`${name} bold`} aria-pressed={style.bold} className={style.bold ? "active" : ""} onClick={() => patch({ bold: !style.bold }, true)}><b>B</b></button><button type="button" aria-label={`${name} italic`} aria-pressed={style.italic} className={style.italic ? "active" : ""} onClick={() => patch({ italic: !style.italic }, true)}><i>I</i></button><button type="button" aria-label={`${name} underline`} aria-pressed={style.underline} className={style.underline ? "active" : ""} onClick={() => patch({ underline: !style.underline }, true)}><u>U</u></button><button type="button" aria-label={`${name} strikethrough`} aria-pressed={style.strikethrough} className={style.strikethrough ? "active" : ""} onClick={() => patch({ strikethrough: !style.strikethrough }, true)}><s>S</s></button></div></div>
     <label>Backdrop color<span className="color-control"><input aria-label={`${name} subtitle backdrop color`} type="color" value={style.backdrop_color} onChange={(event) => patch({ backdrop_color: event.target.value })} /><output>{style.backdrop_color.toUpperCase()}</output></span></label>
     <label className="range-control">Backdrop opacity <output>{style.backdrop_opacity}%</output><input aria-label={`${name} subtitle backdrop opacity`} type="range" min="0" max="100" step="1" value={style.backdrop_opacity} onChange={(event) => patch({ backdrop_opacity: Number(event.target.value) })} /></label>
-    <label className="effect-toggle"><span>Glow effect</span><input type="checkbox" checked={style.glow_enabled} onChange={(event) => patch({ glow_enabled: event.target.checked })} /></label>
+    <label className="effect-toggle"><span>Glow effect</span><input type="checkbox" checked={style.glow_enabled} onChange={(event) => patch({ glow_enabled: event.target.checked }, true)} /></label>
     <label>Glow color<span className="color-control"><input aria-label={`${name} subtitle glow color`} type="color" value={style.glow_color} disabled={!style.glow_enabled} onChange={(event) => patch({ glow_color: event.target.value })} /><output>{style.glow_color.toUpperCase()}</output></span></label>
     <label className="range-control">Glow blur <output>{style.glow_blur}px</output><input aria-label={`${name} subtitle glow blur`} type="range" min="0" max="40" step="1" value={style.glow_blur} disabled={!style.glow_enabled} onChange={(event) => patch({ glow_blur: Number(event.target.value) })} /></label>
     <label className="range-control">Glow intensity <output>{style.glow_intensity}%</output><input aria-label={`${name} subtitle glow intensity`} type="range" min="0" max="100" step="1" value={style.glow_intensity} disabled={!style.glow_enabled} onChange={(event) => patch({ glow_intensity: Number(event.target.value) })} /></label>
@@ -114,14 +115,19 @@ type Video = {
   karaoke_color?: string;
 };
 
+type EditableDocument = {
+  cues: SubtitleCue[];
+  settings: SubtitleSettings;
+  translationStyle: SubtitleTrackStyle;
+};
+
 export function SubtitleEditor({ videoId }: { videoId: string }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const playbackFrameRef = useRef<number | null>(null);
   const [video, setVideo] = useState<Video | null>(null);
-  const [cues, setCues] = useState<SubtitleCue[]>([]);
-  const [settings, setSettings] = useState<SubtitleSettings>(DEFAULT_SUBTITLE_SETTINGS);
-  const [translationStyle, setTranslationStyle] = useState<SubtitleTrackStyle>(DEFAULT_TRANSLATION_STYLE);
+  const doc = useHistoryState<EditableDocument>({ cues: [], settings: DEFAULT_SUBTITLE_SETTINGS, translationStyle: DEFAULT_TRANSLATION_STYLE });
+  const { cues, settings, translationStyle } = doc.value;
   const [userFonts, setUserFonts] = useState<UserFont[]>([]);
   const [googleFonts, setGoogleFonts] = useState<GoogleFont[]>([]);
   const [fontQuota, setFontQuota] = useState({ used: 0, limit: 50 });
@@ -178,9 +184,10 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     else setGoogleUnavailable(true);
     const loadedVideo = data.video as Video;
     setVideo({ ...loadedVideo, playbackUrl: data.playbackUrl });
-    setCues(data.cues);
     if (loadedVideo.translation_status === "ready") setSubtitleMode("bilingual");
-    setSettings({
+    doc.reset({
+      cues: data.cues,
+      settings: {
       font_family: loadedVideo.subtitle_font_source === "google" || loadedVideo.subtitle_font_source === "upload"
         ? loadedVideo.subtitle_font_family?.slice(0, 100) || DEFAULT_SUBTITLE_SETTINGS.font_family
         : isSubtitleFont(loadedVideo.subtitle_font_family) ? loadedVideo.subtitle_font_family : DEFAULT_SUBTITLE_SETTINGS.font_family,
@@ -201,8 +208,8 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
       words_per_cue: loadedVideo.words_per_cue ?? DEFAULT_SUBTITLE_SETTINGS.words_per_cue,
       karaoke_enabled: loadedVideo.karaoke_enabled ?? DEFAULT_SUBTITLE_SETTINGS.karaoke_enabled,
       karaoke_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.karaoke_color ?? "") ? loadedVideo.karaoke_color! : DEFAULT_SUBTITLE_SETTINGS.karaoke_color,
-    });
-    setTranslationStyle({
+      },
+      translationStyle: {
       font_family: loadedVideo.translation_font_source === "google" || loadedVideo.translation_font_source === "upload"
         ? loadedVideo.translation_font_family?.slice(0, 100) || DEFAULT_TRANSLATION_STYLE.font_family
         : isSubtitleFont(loadedVideo.translation_font_family) ? loadedVideo.translation_font_family : DEFAULT_TRANSLATION_STYLE.font_family,
@@ -220,9 +227,11 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
       glow_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.translation_glow_color ?? "") ? loadedVideo.translation_glow_color! : DEFAULT_TRANSLATION_STYLE.glow_color,
       glow_blur: loadedVideo.translation_glow_blur ?? DEFAULT_TRANSLATION_STYLE.glow_blur,
       glow_intensity: loadedVideo.translation_glow_intensity ?? DEFAULT_TRANSLATION_STYLE.glow_intensity,
+      },
     });
     setMessage("");
-  }, [router, token, videoId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- doc.reset has a stable identity; depending on the whole `doc` object would recreate `load` (and retrigger the fetch effect below) every render
+  }, [router, token, videoId, doc.reset]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => () => {
     if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current);
@@ -238,24 +247,47 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
       }
     })).then(() => setFontMessage("")).catch(() => setFontMessage("A selected font could not be loaded. Showing a fallback font."));
   }, [settings, translationStyle, cues, userFonts, googleFonts]);
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) { event.preventDefault(); doc.undo(); }
+      else if ((key === "z" && event.shiftKey) || key === "y") { event.preventDefault(); doc.redo(); }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- doc.undo/doc.redo have stable identities; depending on `doc` would re-bind the listener every render
+  }, [doc.undo, doc.redo]);
 
-  function update(index: number, patch: Partial<SubtitleCue>) { setCues((current) => current.map((cue, cueIndex) => cueIndex === index ? { ...cue, ...patch } : cue)); }
-  function updateWordStyle(cueIndex: number, wordIndex: number, patch: Partial<SubtitleWordStyle> | null) {
-    setCues((current) => current.map((cue, index) => {
-      if (index !== cueIndex) return cue;
-      const words = timedWordsForCue(cue).map((word, index) => index === wordIndex
-        ? { ...word, style: patch === null ? undefined : { ...word.style, ...patch } }
-        : word);
-      return { ...cue, words };
-    }));
+  function update(index: number, patch: Partial<SubtitleCue>, immediate?: boolean) {
+    doc.set((current) => ({ ...current, cues: current.cues.map((cue, cueIndex) => cueIndex === index ? { ...cue, ...patch } : cue) }), { immediate });
+  }
+  function updateWordStyle(cueIndex: number, wordIndex: number, patch: Partial<SubtitleWordStyle> | null, immediate?: boolean) {
+    doc.set((current) => ({
+      ...current,
+      cues: current.cues.map((cue, index) => {
+        if (index !== cueIndex) return cue;
+        const words = timedWordsForCue(cue).map((word, index) => index === wordIndex
+          ? { ...word, style: patch === null ? undefined : { ...word.style, ...patch } }
+          : word);
+        return { ...cue, words };
+      }),
+    }), { immediate });
+  }
+  function patchSettings(patch: Partial<SubtitleSettings>, immediate?: boolean) {
+    doc.set((current) => ({ ...current, settings: { ...current.settings, ...patch } }), { immediate });
+  }
+  function patchTranslationStyle(patch: Partial<SubtitleTrackStyle>, immediate?: boolean) {
+    doc.set((current) => ({ ...current, translationStyle: { ...current.translationStyle, ...patch } }), { immediate });
   }
   async function save() {
+    doc.commitPending();
     setMessage("Saving…"); const accessToken = await token();
     const response = await fetch(`/api/videos/${videoId}/subtitles`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cues, settings, translationStyle }) });
     const data = await response.json(); setMessage(response.ok ? "All changes saved." : data.error);
   }
   function applyWordLimit() {
-    setCues((current) => resegmentCues(current, settings.words_per_cue));
+    doc.set((current) => ({ ...current, cues: resegmentCues(current.cues, current.settings.words_per_cue) }), { immediate: true });
     setMessage(`Subtitles regrouped to ${settings.words_per_cue} words maximum. Save to keep changes.`);
   }
   async function download(format: string) {
@@ -274,16 +306,16 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     ? timedWordsForCue(activeCue).map((word, index) => <span key={`${word.start_ms}-${index}`} className="karaoke-word" style={wordStyle(word.style, settings.karaoke_enabled && time >= word.start_ms && time < word.end_ms ? settings.karaoke_color : undefined)}>{word.text}</span>)
     : activeCue?.text;
 
-  return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message || fontMessage}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={save}>Save changes</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
+  return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message || fontMessage}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={doc.undo} disabled={!doc.canUndo} title="Undo (Ctrl+Z)">↺ Undo</button><button className="secondary-button" onClick={doc.redo} disabled={!doc.canRedo} title="Redo (Ctrl+Y)">↻ Redo</button><button className="secondary-button" onClick={save}>Save changes</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
     <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current); updatePlaybackTime(); }} onPause={stopPlaybackTimer} onEnded={stopPlaybackTimer} onSeeked={(event) => setTime(event.currentTarget.currentTime * 1000)} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}{activeCue && <div className="live-caption">{subtitleMode !== "translated" && <span className="caption-line" style={captionStyle(activeOriginalStyle)}>{originalCaption}</span>}{subtitleMode === "bilingual" && activeCue.translated_text && <span className="caption-line translated-caption" style={captionStyle(translationStyle)}>{activeCue.translated_text}</span>}{subtitleMode === "translated" && <span className="caption-line" style={captionStyle(translationStyle)}>{activeCue.translated_text ?? activeCue.text}</span>}</div>}</div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
       <div className="subtitle-controls"><div className="controls-heading"><div><span className="section-label">ORIGINAL APPEARANCE</span><h2>Original subtitle style</h2></div><small>Preview updates instantly</small></div>
-        <TrackStyleControls style={settings} name="Original" googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style) => setSettings((current) => ({ ...current, ...style }))} />
+        <TrackStyleControls style={settings} name="Original" googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={patchSettings} />
         <div className="control-grid segmentation-controls">
-        <div className="control-field range-control words-control"><label htmlFor="words-per-cue">Maximum words per subtitle</label><output htmlFor="words-per-cue">{settings.words_per_cue} words</output><input id="words-per-cue" type="range" min="2" max="16" step="1" value={settings.words_per_cue} onChange={(event) => setSettings((current) => ({ ...current, words_per_cue: Number(event.target.value) }))} /><span className="range-scale"><small>2</small><small>16</small></span><button type="button" className="secondary-button apply-limit" onClick={applyWordLimit}>Apply word limit</button></div>
-        <label className="karaoke-toggle"><span><b>Karaoke highlighting</b><small>Highlight each original word as it is spoken</small></span><input type="checkbox" checked={settings.karaoke_enabled} onChange={(event) => setSettings((current) => ({ ...current, karaoke_enabled: event.target.checked }))} /></label>
-        <label className="karaoke-color">Highlight color<span className="color-control"><input aria-label="Karaoke highlight color" type="color" value={settings.karaoke_color} disabled={!settings.karaoke_enabled} onChange={(event) => setSettings((current) => ({ ...current, karaoke_color: event.target.value }))} /><output>{settings.karaoke_color.toUpperCase()}</output></span></label>
+        <div className="control-field range-control words-control"><label htmlFor="words-per-cue">Maximum words per subtitle</label><output htmlFor="words-per-cue">{settings.words_per_cue} words</output><input id="words-per-cue" type="range" min="2" max="16" step="1" value={settings.words_per_cue} onChange={(event) => patchSettings({ words_per_cue: Number(event.target.value) })} /><span className="range-scale"><small>2</small><small>16</small></span><button type="button" className="secondary-button apply-limit" onClick={applyWordLimit}>Apply word limit</button></div>
+        <label className="karaoke-toggle"><span><b>Karaoke highlighting</b><small>Highlight each original word as it is spoken</small></span><input type="checkbox" checked={settings.karaoke_enabled} onChange={(event) => patchSettings({ karaoke_enabled: event.target.checked }, true)} /></label>
+        <label className="karaoke-color">Highlight color<span className="color-control"><input aria-label="Karaoke highlight color" type="color" value={settings.karaoke_color} disabled={!settings.karaoke_enabled} onChange={(event) => patchSettings({ karaoke_color: event.target.value })} /><output>{settings.karaoke_color.toUpperCase()}</output></span></label>
       </div></div>
-      {hasTranslation && <div className="subtitle-controls translation-controls"><div className="controls-heading"><div><span className="section-label">TRANSLATION APPEARANCE</span><h2>{targetLanguage} subtitle style</h2></div><small>Styled independently</small></div><TrackStyleControls style={translationStyle} name={targetLanguage} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={setTranslationStyle} /></div>}
+      {hasTranslation && <div className="subtitle-controls translation-controls"><div className="controls-heading"><div><span className="section-label">TRANSLATION APPEARANCE</span><h2>{targetLanguage} subtitle style</h2></div><small>Styled independently</small></div><TrackStyleControls style={translationStyle} name={targetLanguage} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={patchTranslationStyle} /></div>}
       </section>
-    <section className="cue-pane"><div className="cue-head"><b>{cues.length} subtitle cues</b><span>{hasTranslation ? `${video?.language?.toUpperCase() ?? "AUTO"} + ${video?.translation_target_language?.toUpperCase()}` : video?.language?.toUpperCase() ?? "AUTO"}</span></div>{cues.map((cue, index) => <article className={`cue-row ${activeCue?.cue_index === cue.cue_index ? "active" : ""}`} key={cue.id ?? index} onClick={() => { if (videoRef.current) videoRef.current.currentTime = cue.start_ms / 1000; }}><span className="cue-number">{index + 1}</span><div className="time-fields"><input aria-label="Start time in milliseconds" type="number" min="0" value={cue.start_ms} onChange={(e) => update(index, { start_ms: Number(e.target.value) })} /><span>→</span><input aria-label="End time in milliseconds" type="number" min="1" value={cue.end_ms} onChange={(e) => update(index, { end_ms: Number(e.target.value) })} /><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div><div className="cue-text-fields"><label><small>Original</small><textarea aria-label={`Original subtitle ${index + 1}`} value={cue.text} onChange={(e) => update(index, { text: e.target.value })} /></label>{cue.translated_text != null && <label><small>{targetLanguage}</small><textarea aria-label={`${targetLanguage} subtitle ${index + 1}`} value={cue.translated_text} onChange={(e) => update(index, { translated_text: e.target.value })} /></label>}<button type="button" className="cue-style-toggle" onClick={(event) => { event.stopPropagation(); setExpandedCue((current) => current === index ? null : index); setSelectedWord(null); }}>{expandedCue === index ? "Hide styling" : cue.style_override || cue.words?.some((word) => word.style) ? "Edit custom styling" : "Customize this line"}</button></div>{expandedCue === index && <div className="cue-style-editor" onClick={(event) => event.stopPropagation()}><div className="cue-style-heading"><b>Line appearance</b>{cue.style_override && <button type="button" onClick={() => update(index, { style_override: null })}>Use project style</button>}</div><TrackStyleControls style={cue.style_override ?? settings} name={`Subtitle ${index + 1}`} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style) => update(index, { style_override: style })} /><div className="word-style-editor"><b>Word emphasis</b><small>Select a word, then apply formatting.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} className={`${selectedWord?.cueIndex === index && selectedWord.wordIndex === wordIndex ? "selected" : ""} ${word.style ? "customized" : ""}`} onClick={() => setSelectedWord({ cueIndex: index, wordIndex })}>{word.text.trim()}</button>)}</div>{selectedWord?.cueIndex === index && <div className="word-format-controls"><button type="button" aria-label="Bold selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { bold: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.bold })}><b>B</b></button><button type="button" aria-label="Italicize selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { italic: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.italic })}><i>I</i></button><button type="button" aria-label="Underline selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { underline: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.underline })}><u>U</u></button><input aria-label="Selected word color" type="color" value={timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.text_color ?? (cue.style_override ?? settings).text_color} onChange={(event) => updateWordStyle(index, selectedWord.wordIndex, { text_color: event.target.value })} /><button type="button" className="clear-word-style" onClick={() => updateWordStyle(index, selectedWord.wordIndex, null)}>Clear</button></div>}</div></div>}</article>)}</section></div>{fontLibraryOpen && <FontLibraryPanel fonts={userFonts.filter((font) => !font.archivedAt)} quota={fontQuota} getToken={token} onClose={() => setFontLibraryOpen(false)} onChanged={loadFontLibrary} />}</div></AppShell>;
+    <section className="cue-pane"><div className="cue-head"><b>{cues.length} subtitle cues</b><span>{hasTranslation ? `${video?.language?.toUpperCase() ?? "AUTO"} + ${video?.translation_target_language?.toUpperCase()}` : video?.language?.toUpperCase() ?? "AUTO"}</span></div>{cues.map((cue, index) => <article className={`cue-row ${activeCue?.cue_index === cue.cue_index ? "active" : ""}`} key={cue.id ?? index} onClick={() => { if (videoRef.current) videoRef.current.currentTime = cue.start_ms / 1000; }}><span className="cue-number">{index + 1}</span><div className="time-fields"><input aria-label="Start time in milliseconds" type="number" min="0" value={cue.start_ms} onChange={(e) => update(index, { start_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><span>→</span><input aria-label="End time in milliseconds" type="number" min="1" value={cue.end_ms} onChange={(e) => update(index, { end_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div><div className="cue-text-fields"><label><small>Original</small><textarea aria-label={`Original subtitle ${index + 1}`} value={cue.text} onChange={(e) => update(index, { text: e.target.value })} onBlur={doc.commitPending} /></label>{cue.translated_text != null && <label><small>{targetLanguage}</small><textarea aria-label={`${targetLanguage} subtitle ${index + 1}`} value={cue.translated_text} onChange={(e) => update(index, { translated_text: e.target.value })} onBlur={doc.commitPending} /></label>}<button type="button" className="cue-style-toggle" onClick={(event) => { event.stopPropagation(); setExpandedCue((current) => current === index ? null : index); setSelectedWord(null); }}>{expandedCue === index ? "Hide styling" : cue.style_override || cue.words?.some((word) => word.style) ? "Edit custom styling" : "Customize this line"}</button></div>{expandedCue === index && <div className="cue-style-editor" onClick={(event) => event.stopPropagation()}><div className="cue-style-heading"><b>Line appearance</b>{cue.style_override && <button type="button" onClick={() => update(index, { style_override: null }, true)}>Use project style</button>}</div><TrackStyleControls style={cue.style_override ?? settings} name={`Subtitle ${index + 1}`} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style, immediate) => update(index, { style_override: style }, immediate)} /><div className="word-style-editor"><b>Word emphasis</b><small>Select a word, then apply formatting.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} className={`${selectedWord?.cueIndex === index && selectedWord.wordIndex === wordIndex ? "selected" : ""} ${word.style ? "customized" : ""}`} onClick={() => setSelectedWord({ cueIndex: index, wordIndex })}>{word.text.trim()}</button>)}</div>{selectedWord?.cueIndex === index && <div className="word-format-controls"><button type="button" aria-label="Bold selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { bold: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.bold }, true)}><b>B</b></button><button type="button" aria-label="Italicize selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { italic: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.italic }, true)}><i>I</i></button><button type="button" aria-label="Underline selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { underline: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.underline }, true)}><u>U</u></button><input aria-label="Selected word color" type="color" value={timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.text_color ?? (cue.style_override ?? settings).text_color} onChange={(event) => updateWordStyle(index, selectedWord.wordIndex, { text_color: event.target.value })} /><button type="button" className="clear-word-style" onClick={() => updateWordStyle(index, selectedWord.wordIndex, null, true)}>Clear</button></div>}</div></div>}</article>)}</section></div>{fontLibraryOpen && <FontLibraryPanel fonts={userFonts.filter((font) => !font.archivedAt)} quota={fontQuota} getToken={token} onClose={() => setFontLibraryOpen(false)} onChanged={loadFontLibrary} />}</div></AppShell>;
 }
