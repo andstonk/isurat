@@ -13,6 +13,7 @@ import {
   waitForSonioxTranscription,
 } from "@/lib/soniox";
 import { createAdminSupabase } from "@/lib/supabase";
+import { transcodeToH264Mp4 } from "@/lib/transcode";
 import { logError } from "@/lib/error-log";
 
 export const maxDuration = 300;
@@ -37,8 +38,12 @@ export async function POST(request: NextRequest) {
   let sonioxFileId: string | undefined;
   let sonioxTranscriptionId: string | undefined;
   try {
-    const buffer = await getVideoContainer().getBlockBlobClient(video.blob_name).downloadToBuffer();
-    const sonioxFile = await uploadSonioxFile(buffer, video.file_name);
+    const rawBuffer = await getVideoContainer().getBlockBlobClient(video.blob_name).downloadToBuffer();
+    const buffer = await transcodeToH264Mp4(rawBuffer, video.file_name);
+    await getVideoContainer().getBlockBlobClient(video.blob_name).uploadData(buffer, {
+      blobHTTPHeaders: { blobContentType: "video/mp4" },
+    });
+    const sonioxFile = await uploadSonioxFile(buffer, "video.mp4");
     sonioxFileId = sonioxFile.id;
     const transcription = await createSonioxTranscription(sonioxFile.id, video.id, video.translation_target_language);
     sonioxTranscriptionId = transcription.id;

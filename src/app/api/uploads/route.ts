@@ -9,13 +9,28 @@ import { logError } from "@/lib/error-log";
 
 const MAX_SIZE = 25 * 1024 * 1024;
 
+// Videos are always re-encoded to H.264/AAC MP4 during processing (see
+// transcodeToH264Mp4 in /api/jobs/process), so any container ffmpeg can read
+// is fine at upload time — this just covers the common real-world sources,
+// including the HEVC .mov/.mp4 files iPhones and Android phones produce.
+const ALLOWED_UPLOADS = [
+  { extension: ".mp4", contentType: "video/mp4" },
+  { extension: ".mov", contentType: "video/quicktime" },
+  { extension: ".m4v", contentType: "video/x-m4v" },
+];
+
+function isAllowedUpload(fileName: string, contentType: string) {
+  const name = fileName.toLowerCase();
+  return ALLOWED_UPLOADS.some((entry) => name.endsWith(entry.extension) && contentType === entry.contentType);
+}
+
 export async function POST(request: NextRequest) {
   const user = await getRequestUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = (await request.json()) as { fileName?: string; fileSize?: number; contentType?: string; targetLanguage?: string | null };
-  if (!body.fileName?.toLowerCase().endsWith(".mp4") || body.contentType !== "video/mp4") {
-    return NextResponse.json({ error: "Select an MP4 video." }, { status: 400 });
+  if (!body.fileName || !isAllowedUpload(body.fileName, body.contentType ?? "")) {
+    return NextResponse.json({ error: "Select an MP4 or MOV video." }, { status: 400 });
   }
   if (!body.fileSize || body.fileSize > MAX_SIZE) {
     return NextResponse.json({ error: "Videos must be 25 MB or smaller for this MVP." }, { status: 400 });

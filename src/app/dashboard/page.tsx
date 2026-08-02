@@ -48,13 +48,13 @@ export default function DashboardPage() {
       const init = await authFetch("/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: file.name, fileSize: file.size, contentType: file.type, targetLanguage: targetLanguage || null }) });
       const job = await init.json();
       if (!init.ok) throw new Error(job.error);
-      setStatus("Uploading MP4 to Azure Blob Storage…");
-      const uploaded = await fetch(job.uploadUrl, { method: "PUT", headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": "video/mp4" }, body: file });
+      setStatus("Uploading video to Azure Blob Storage…");
+      const uploaded = await fetch(job.uploadUrl, { method: "PUT", headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": file.type || "application/octet-stream" }, body: file });
       if (!uploaded.ok) throw new Error("Azure upload failed. Check storage CORS settings.");
       setStatus("Creating processing job…");
       const complete = await authFetch("/api/uploads/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: job.videoId }) });
       if (!complete.ok) throw new Error((await complete.json()).error);
-      setStatus(targetLanguage ? "Transcribing and translating with Soniox…" : "Transcribing and timestamping with Soniox…");
+      setStatus(targetLanguage ? "Converting video and transcribing/translating with Soniox…" : "Converting video and transcribing with Soniox…");
       const processed = await authFetch("/api/jobs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: job.videoId }) });
       const result = await processed.json();
       if (!processed.ok) throw new Error(result.error);
@@ -107,8 +107,8 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <div className="app-container">
-        <div className="app-title"><div><span className="section-label">YOUR WORKSPACE</span><h1>Subtitle projects</h1><p>Upload an MP4, transcribe it, refine the timing, and export.</p></div>
-          <div className="new-project-controls"><label>Translate subtitles to<select value={targetLanguage} disabled={busy} onChange={(event) => setTargetLanguage(event.target.value as TranslationLanguage | "")}><option value="">No translation</option>{TRANSLATION_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}</select></label><label className={`primary-button upload-label ${busy ? "disabled" : ""}`}>+ New video<input type="file" accept="video/mp4,.mp4" onChange={upload} disabled={busy} /></label></div>
+        <div className="app-title"><div><span className="section-label">YOUR WORKSPACE</span><h1>Subtitle projects</h1><p>Upload an MP4 or MOV (including HEVC from phones), transcribe it, refine the timing, and export.</p></div>
+          <div className="new-project-controls"><label>Translate subtitles to<select value={targetLanguage} disabled={busy} onChange={(event) => setTargetLanguage(event.target.value as TranslationLanguage | "")}><option value="">No translation</option>{TRANSLATION_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}</select></label><label className={`primary-button upload-label ${busy ? "disabled" : ""}`}>+ New video<input type="file" accept="video/mp4,.mp4,video/quicktime,.mov,.m4v" onChange={upload} disabled={busy} /></label></div>
         </div>
         {status && <div className="status-banner" role="status"><span className={busy ? "status-pulse" : ""} />{status}</div>}
         <section className="project-list">

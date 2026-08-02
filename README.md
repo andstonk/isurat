@@ -1,6 +1,6 @@
 # Subframe
 
-A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 videos to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, style each subtitle track independently with system, Google, or private uploaded fonts, enable word-timed karaoke highlighting, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
+A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4/MOV videos (including HEVC from phones, auto-transcoded to H.264 for playback) to Azure Blob Storage, create Soniox transcription and translation jobs, edit timestamped original and translated subtitles, style each subtitle track independently with system, Google, or private uploaded fonts, enable word-timed karaoke highlighting, control the maximum words per cue, preview captions, and export SRT, VTT, or TXT files.
 
 ## Stack
 
@@ -75,7 +75,7 @@ For Google sign-in, enable Google under **Authentication → Providers**, create
 
 Email/password registration also requires the Email provider to be enabled. When email confirmation is enabled, configure a working SMTP provider and ensure the confirmation template redirects to the application's `/auth/callback` URL.
 
-The MVP limits MP4 uploads to 25 MB and waits for Soniox's asynchronous transcription inside the processing request. A translation target can be selected before upload; the editor then supports original-only, translated-only, or double subtitles. For production-scale videos, submit jobs from an Azure Function or queue worker and use a Soniox webhook to update PostgreSQL when processing completes.
+The MVP limits video uploads (MP4/MOV/M4V) to 25 MB, re-encodes them to H.264/AAC MP4 via ffmpeg before playback and transcription, and waits for Soniox's asynchronous transcription inside the processing request. A translation target can be selected before upload; the editor then supports original-only, translated-only, or double subtitles. For production-scale videos, submit jobs from an Azure Function or queue worker and use a Soniox webhook to update PostgreSQL when processing completes.
 
 ### 5. Run locally
 
