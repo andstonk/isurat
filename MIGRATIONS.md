@@ -17,7 +17,7 @@ Use a scratch Supabase project (not shared, not staging/prod) for this step.
 
 - Apply the migration to a staging Supabase project.
 - Point a staging deployment (or local dev pointed at staging env vars) at it and run the same affected flow end-to-end.
-- Confirm `npm run lint` and `npm run build` still pass (CI does this automatically on every push/PR — see `.github/workflows/ci.yml`).
+- Confirm `pnpm lint` and `pnpm build` still pass (CI does this automatically on every push/PR — see `.github/workflows/ci.yml`).
 
 ## 3. Production
 
