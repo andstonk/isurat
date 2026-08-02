@@ -31,10 +31,5 @@
   "engines": {
     "node": ">=20.9.0"
   },
-  "overrides": {
-    "eslint-import-resolver-typescript": "3.8.7",
-    "@tailwindcss/node": {
-      "lightningcss": "npm:lightningcss-wasm@1.32.0"
-    }
-  }
+  "packageManager": "pnpm@11.18.0"
 }
