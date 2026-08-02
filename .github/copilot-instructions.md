@@ -15,6 +15,6 @@
 - Use Next.js App Router, TypeScript, and Tailwind CSS.
 - Keep Supabase service-role credentials server-only.
 - Preserve the responsive, accessible, dark cinematic design system.
-- Validate changes with `npm run lint` and `npm run build`.
+- Validate changes with `pnpm lint` and `pnpm build`.
 - Keep README.md and .env.example current when setup requirements change.
 - Follow development best practices and keep communication concise.

@@ -4,9 +4,8 @@
 		{
 			"label": "Next.js: dev server",
 			"type": "shell",
-			"command": "npm",
+			"command": "pnpm",
 			"args": [
-				"run",
 				"dev"
 			],
 			"isBackground": true,

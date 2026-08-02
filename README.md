@@ -16,7 +16,7 @@ A functional MVP for an AI subtitle SaaS. Users can authenticate, upload MP4 vid
 ### 1. Install dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 2. Create the Supabase table
@@ -80,7 +80,7 @@ The MVP limits MP4 uploads to 25 MB and waits for Soniox's asynchronous transcri
 ### 5. Run locally
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Open `http://localhost:3000`. Submit a test email and confirm it appears in the Supabase `waitlist` table.
@@ -88,8 +88,8 @@ Open `http://localhost:3000`. Submit a test email and confirm it appears in the 
 ## Validation
 
 ```bash
-npm run lint
-npm run build
+pnpm lint
+pnpm build
 ```
 
 `.github/workflows/ci.yml` runs both commands automatically on every push to `main` and on every pull request.
@@ -99,7 +99,7 @@ npm run build
 1. Push this project to a Git repository.
 2. Import the repository into Vercel as a Next.js project.
 3. Add all Supabase, Azure, and Soniox variables listed above under Project Settings → Environment Variables for Production, Preview, and Development as appropriate.
-4. Deploy. Vercel detects the framework and runs `npm run build` automatically.
+4. Deploy. Vercel detects the framework and pnpm lockfile, then runs `pnpm build` automatically.
 5. Update the canonical site URL in the metadata, sitemap, and robots configuration if the production domain is not `https://subframe.app`.
 
 ## Waitlist data
@@ -116,7 +116,7 @@ For a current-state architecture reference (data model, request flows, styling c
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start local development with Turbopack |
-| `npm run build` | Create a production build |
-| `npm run start` | Serve the production build |
-| `npm run lint` | Run ESLint |
+| `pnpm dev` | Start local development with Turbopack |
+| `pnpm build` | Create a production build |
+| `pnpm start` | Serve the production build |
+| `pnpm lint` | Run ESLint |
