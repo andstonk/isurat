@@ -5,6 +5,7 @@ import { getRequestUser } from "@/lib/api-auth";
 import { getVideoContainer } from "@/lib/azure";
 import { createAdminSupabase } from "@/lib/supabase";
 import { isTranslationLanguage } from "@/lib/subtitles";
+import { logError } from "@/lib/error-log";
 
 const MAX_SIZE = 25 * 1024 * 1024;
 
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ videoId: data.id, uploadUrl });
   } catch (error) {
     console.error("Upload initialization failed", error);
+    await logError(createAdminSupabase(), { route: "POST /api/uploads", userId: user.id, error });
     return NextResponse.json({ error: "Could not initialize upload." }, { status: 500 });
   }
 }

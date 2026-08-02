@@ -7,7 +7,12 @@ import { AppShell } from "@/components/app-shell";
 import { createBrowserSupabase } from "@/lib/supabase";
 import { TRANSLATION_LANGUAGES, type TranslationLanguage } from "@/lib/subtitles";
 
-type Video = { id: string; file_name: string; file_size: number; status: string; error_message?: string; language?: string; created_at: string };
+type Video = { id: string; file_name: string; file_size: number; status: string; error_message?: string; language?: string; created_at: string; updated_at: string };
+
+const STUCK_PROCESSING_MS = 6 * 60 * 1000;
+function isStuckProcessing(video: Video) {
+  return video.status === "processing" && Date.now() - new Date(video.updated_at).getTime() > STUCK_PROCESSING_MS;
+}
 
 async function authFetch(path: string, init?: RequestInit) {
   const { data } = await createBrowserSupabase().auth.getSession();
@@ -20,6 +25,7 @@ export default function DashboardPage() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [targetLanguage, setTargetLanguage] = useState<TranslationLanguage | "">("");
 
@@ -80,6 +86,24 @@ export default function DashboardPage() {
     }
   }
 
+  async function retryVideo(video: Video) {
+    setRetryingId(video.id);
+    setStatus(`Retrying ${video.file_name}…`);
+    try {
+      const response = await authFetch("/api/jobs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: video.id }) });
+      if (response.status === 401) return router.push("/auth");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Could not retry this video.");
+      setStatus(`${video.file_name} is processing again.`);
+    } catch (error) {
+      setStatus(error instanceof Error && error.message !== "AUTH_REQUIRED" ? error.message : "Could not retry this video.");
+      if (error instanceof Error && error.message === "AUTH_REQUIRED") router.push("/auth");
+    } finally {
+      setRetryingId(null);
+      await loadVideos();
+    }
+  }
+
   return (
     <AppShell>
       <div className="app-container">
@@ -94,6 +118,11 @@ export default function DashboardPage() {
               <span className={`status-chip status-${video.status}`}>{video.status}</span>
               <div className="project-actions">
                 {video.status === "ready" && <Link className="secondary-button" href={`/editor/${video.id}`}>Open editor</Link>}
+                {(video.status === "failed" || isStuckProcessing(video)) && (
+                  <button className="secondary-button" type="button" onClick={() => void retryVideo(video)} disabled={retryingId !== null}>
+                    {retryingId === video.id ? "Retrying…" : isStuckProcessing(video) ? "Retry (stuck)" : "Retry"}
+                  </button>
+                )}
                 <button className="secondary-button danger-button" type="button" onClick={() => void deleteVideo(video)} disabled={deletingId !== null}>
                   {deletingId === video.id ? "Deleting…" : "Delete"}
                 </button>

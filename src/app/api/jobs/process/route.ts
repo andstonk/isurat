@@ -13,8 +13,13 @@ import {
   waitForSonioxTranscription,
 } from "@/lib/soniox";
 import { createAdminSupabase } from "@/lib/supabase";
+import { logError } from "@/lib/error-log";
 
 export const maxDuration = 300;
+
+// maxDuration above is 5 minutes; give a Vercel-killed job a 1-minute grace
+// period past that before treating it as stuck and eligible for retry.
+const STUCK_PROCESSING_MS = 6 * 60 * 1000;
 
 export async function POST(request: NextRequest) {
   const user = await getRequestUser(request);
@@ -22,7 +27,9 @@ export async function POST(request: NextRequest) {
   const { videoId } = (await request.json()) as { videoId?: string };
   const db = createAdminSupabase();
   const { data: video } = await db.from("videos").select("*").eq("id", videoId).eq("user_id", user.id).single();
-  if (!video || !["queued", "failed"].includes(video.status)) {
+  const isStuckProcessing = video?.status === "processing"
+    && Date.now() - new Date(video.updated_at).getTime() > STUCK_PROCESSING_MS;
+  if (!video || !(["queued", "failed"].includes(video.status) || isStuckProcessing)) {
     return NextResponse.json({ error: "Processing job was not found." }, { status: 404 });
   }
 
@@ -59,6 +66,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown processing error";
     console.error("Transcription failed", error);
+    await logError(db, { route: "POST /api/jobs/process", userId: user.id, videoId: video.id, error });
     await db.from("videos").update({
       status: "failed",
       translation_status: video.translation_target_language ? "failed" : "none",

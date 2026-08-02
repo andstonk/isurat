@@ -3,6 +3,7 @@ import { getRequestUser } from "@/lib/api-auth";
 import { isGoogleFontFamily } from "@/lib/google-fonts";
 import { createAdminSupabase } from "@/lib/supabase";
 import { hasValidWordTimings, isSubtitleTrackStyle, timedWordsForCue, type SubtitleCue, type SubtitleSettings, type SubtitleTrackStyle } from "@/lib/subtitles";
+import { logError } from "@/lib/error-log";
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(request);
@@ -60,7 +61,10 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     words: timedWordsForCue(cue),
     style_override: cue.style_override ?? null,
   })));
-  if (error) return NextResponse.json({ error: "Could not save subtitles." }, { status: 500 });
+  if (error) {
+    await logError(db, { route: "PUT /api/videos/[id]/subtitles", userId: user.id, videoId: id, error });
+    return NextResponse.json({ error: "Could not save subtitles." }, { status: 500 });
+  }
   const { error: videoError } = await db.from("videos").update({
     transcript: cues.map((cue) => cue.text.trim()).join(" "),
     ...(settings ? {
@@ -102,6 +106,9 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     } : {}),
     updated_at: new Date().toISOString(),
   }).eq("id", id);
-  if (videoError) return NextResponse.json({ error: "Subtitles were saved, but their appearance could not be saved." }, { status: 500 });
+  if (videoError) {
+    await logError(db, { route: "PUT /api/videos/[id]/subtitles", userId: user.id, videoId: id, error: videoError });
+    return NextResponse.json({ error: "Subtitles were saved, but their appearance could not be saved." }, { status: 500 });
+  }
   return NextResponse.json({ saved: true });
 }

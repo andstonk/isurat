@@ -30,7 +30,10 @@ supabase/migrations/003_add_subtitle_customization.sql
 supabase/migrations/004_add_user_fonts.sql
 supabase/migrations/005_add_karaoke_subtitles.sql
 supabase/migrations/006_add_advanced_subtitle_styles.sql
+supabase/migrations/007_add_error_logs.sql
 ```
+
+See `MIGRATIONS.md` for the validation checklist to follow whenever a new migration is added.
 
 The migration enables Row Level Security and creates no public policies. Browser clients cannot read or write the table; submissions are handled only by the server API route.
 
@@ -89,6 +92,8 @@ npm run lint
 npm run build
 ```
 
+`.github/workflows/ci.yml` runs both commands automatically on every push to `main` and on every pull request.
+
 ## Deploy to Vercel
 
 1. Push this project to a Git repository.
@@ -100,6 +105,12 @@ npm run build
 ## Waitlist data
 
 The API normalizes email addresses, validates input, handles duplicate signups, and writes with a server-only Supabase service role key. The `email` column has a case-insensitive unique index.
+
+## Operations
+
+Failures in the upload, transcription, and subtitle-save flows are written to the `error_logs` table (server-only, no public RLS policy) for later diagnosis. Videos stuck in `failed` — or stuck in `processing` for more than 6 minutes, past the 5-minute processing timeout — get a Retry button on the dashboard. See `RUNBOOK.md` for how to diagnose and recover a stuck or failed job, and `MIGRATIONS.md` for the checklist to follow when adding a new database migration.
+
+For a current-state architecture reference (data model, request flows, styling cascade, conventions), see `DESIGN.md`. For what's planned next, see `ROADMAP.md`.
 
 ## Project commands
 
