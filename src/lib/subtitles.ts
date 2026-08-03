@@ -254,6 +254,69 @@ export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {
   return result;
 }
 
+export function findMatchingCueIndexes(cues: SubtitleCue[], query: string, matchCase = false): number[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const needle = matchCase ? trimmed : trimmed.toLowerCase();
+  return cues.reduce<number[]>((indexes, cue, index) => {
+    const haystack = matchCase ? cue.text : cue.text.toLowerCase();
+    if (haystack.includes(needle)) indexes.push(index);
+    return indexes;
+  }, []);
+}
+
+export function replaceInCues(cues: SubtitleCue[], query: string, replacement: string, matchCase = false): { cues: SubtitleCue[]; count: number } {
+  const trimmed = query.trim();
+  if (!trimmed) return { cues, count: 0 };
+  const pattern = new RegExp(trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), matchCase ? "g" : "gi");
+  let count = 0;
+  const nextCues = cues.map((cue) => {
+    const matches = cue.text.match(pattern);
+    if (!matches) return cue;
+    count += matches.length;
+    return { ...cue, text: cue.text.replace(pattern, replacement) };
+  });
+  return { cues: nextCues, count };
+}
+
+export type ReadabilityIssue = "cps-high" | "wpm-high" | "duration-short" | "duration-long";
+
+export type ReadabilityStats = {
+  durationMs: number;
+  characterCount: number;
+  wordCount: number;
+  cps: number;
+  wpm: number;
+  issues: ReadabilityIssue[];
+};
+
+const MAX_CPS = 21;
+const MAX_WPM = 200;
+const MIN_DURATION_MS = 833;
+const MAX_DURATION_MS = 7000;
+
+export const READABILITY_LABELS: Record<ReadabilityIssue, string> = {
+  "cps-high": "Reading speed exceeds 21 characters/second",
+  "wpm-high": "Reading speed exceeds 200 words/minute",
+  "duration-short": "Displayed for under 0.83s — too brief to read",
+  "duration-long": "Displayed for over 7s — consider splitting",
+};
+
+export function readabilityStats(cue: SubtitleCue): ReadabilityStats {
+  const durationMs = Math.max(0, cue.end_ms - cue.start_ms);
+  const characterCount = cue.text.replace(/\s+/g, "").length;
+  const wordCount = cue.text.trim().split(/\s+/).filter(Boolean).length;
+  const seconds = durationMs / 1000;
+  const cps = seconds > 0 ? characterCount / seconds : 0;
+  const wpm = seconds > 0 ? (wordCount / seconds) * 60 : 0;
+  const issues: ReadabilityIssue[] = [];
+  if (durationMs > 0 && durationMs < MIN_DURATION_MS) issues.push("duration-short");
+  if (durationMs > MAX_DURATION_MS) issues.push("duration-long");
+  if (cps > MAX_CPS) issues.push("cps-high");
+  if (wpm > MAX_WPM) issues.push("wpm-high");
+  return { durationMs, characterCount, wordCount, cps, wpm, issues };
+}
+
 function pad(value: number, length = 2) {
   return String(value).padStart(length, "0");
 }

@@ -21,42 +21,42 @@ Planning horizon: 16 weeks (Aug-Nov 2026)
 
 Total: 16 weeks
 
-## Phase 0 (Weeks 1-2): Stabilization and Foundations
+## Phase 0 (Weeks 1-2): Stabilization and Foundations ✅ Done
 
 Goals:
 - Ensure the current subtitle workflow is production reliable
 - Close technical debt from recent subtitle and karaoke changes
 
 Deliverables:
-- Database migration validation checklist (local, staging, prod)
-- Build pipeline stability fixes (lint/build clean on CI)
-- Error telemetry for upload, transcription, and save flows
-- Better retry and recovery UX for failed jobs
+- [x] Database migration validation checklist (local, staging, prod)
+- [x] Build pipeline stability fixes (lint/build clean on CI)
+- [x] Error telemetry for upload, transcription, and save flows
+- [x] Better retry and recovery UX for failed jobs
 
 Exit criteria:
-- No blocking lint/build issues
-- Core flow success rate >= 95% in staging test runs
-- Clear runbook for failed processing jobs
+- [x] No blocking lint/build issues
+- [x] Core flow success rate >= 95% in staging test runs
+- [x] Clear runbook for failed processing jobs
 
-## Phase 1 (Weeks 3-5): Editing Productivity and Quality
+## Phase 1 (Weeks 3-5): Editing Productivity and Quality ✅ Deliverables done
 
 Goals:
 - Make subtitle editing significantly faster for creators
 
 Deliverables:
-- Undo/redo history in subtitle editor
-- Bulk timestamp shift (+/- ms or sec)
-- Cue split/merge tools
-- Search and replace across cues
-- Readability validator (CPS/WPM warnings and duration checks)
-- Cue-level style overrides so every subtitle line can use different fonts, colors, sizes, and formatting
-- Word-level emphasis controls for bold, italic, underline, and custom text color
-- Style inheritance model: word override -> cue override -> project default
+- [x] Undo/redo history in subtitle editor
+- [x] Bulk timestamp shift (+/- ms or sec)
+- [x] Cue split/merge tools
+- [x] Search and replace across cues
+- [x] Readability validator (CPS/WPM warnings and duration checks)
+- [x] Cue-level style overrides so every subtitle line can use different fonts, colors, sizes, and formatting
+- [x] Word-level emphasis controls for bold, italic, underline, and custom text color
+- [x] Style inheritance model: word override -> cue override -> project default
 
 Exit criteria:
-- 30% fewer manual editing actions on common test projects
-- No regression in subtitle save performance
-- Per-cue and per-word formatting persists after saving, reloading, and regrouping cues
+- [ ] 30% fewer manual editing actions on common test projects
+- [ ] No regression in subtitle save performance
+- [x] Per-cue and per-word formatting persists after saving, reloading, and regrouping cues
 
 ## Phase 2 (Weeks 6-7): Import and Export Expansion
 
@@ -64,14 +64,14 @@ Goals:
 - Support existing subtitle assets and improve interoperability
 
 Deliverables:
-- Import SRT and VTT into editor
-- Robust parser with validation and error reporting
-- Maintain karaoke fallback behavior for imported files without word timing
-- Export naming and metadata consistency improvements
+- [ ] Import SRT and VTT into editor
+- [ ] Robust parser with validation and error reporting
+- [ ] Maintain karaoke fallback behavior for imported files without word timing
+- [ ] Export naming and metadata consistency improvements
 
 Exit criteria:
-- Import success >= 98% on validation corpus
-- Round-trip test passes (import -> edit -> export)
+- [ ] Import success >= 98% on validation corpus
+- [ ] Round-trip test passes (import -> edit -> export)
 
 ## Phase 3 (Weeks 8-10): Collaboration and Workflow
 
@@ -79,14 +79,14 @@ Goals:
 - Enable team use and safer project iteration
 
 Deliverables:
-- Project version history (manual snapshots)
-- Restore previous subtitle versions
-- Shareable read-only project links
-- Optional role flags (owner/editor/viewer) for future extension
+- [ ] Project version history (manual snapshots)
+- [ ] Restore previous subtitle versions
+- [ ] Shareable read-only project links
+- [ ] Optional role flags (owner/editor/viewer) for future extension
 
 Exit criteria:
-- Users can recover from mistakes without database intervention
-- Shared view links work securely and expire when configured
+- [ ] Users can recover from mistakes without database intervention
+- [ ] Shared view links work securely and expire when configured
 
 ## Phase 4 (Weeks 11-13): Rendering and Delivery
 
@@ -94,17 +94,17 @@ Goals:
 - Expand from subtitle files to delivery-ready outputs
 
 Deliverables:
-- Burned-in subtitle MP4 export (server-side render pipeline)
-- Preset style packs (cinematic, social short-form, accessibility)
-- Position/alignment controls with safe-title guides
-- Customizable text glow controls (enabled, color, blur radius, and intensity)
-- Preview/render parity for project, cue, and word-level style overrides
-- Optional speaker labels and accessibility markers
+- [ ] Burned-in subtitle MP4 export (server-side render pipeline)
+- [ ] Preset style packs (cinematic, social short-form, accessibility)
+- [ ] Position/alignment controls with safe-title guides
+- [ ] Customizable text glow controls (enabled, color, blur radius, and intensity)
+- [ ] Preview/render parity for project, cue, and word-level style overrides
+- [ ] Optional speaker labels and accessibility markers
 
 Exit criteria:
-- Burn-in export works for target max file size and duration
-- Presets are reusable across projects
-- Glow and formatting effects match between editor preview and rendered video output
+- [ ] Burn-in export works for target max file size and duration
+- [ ] Presets are reusable across projects
+- [ ] Glow and formatting effects match between editor preview and rendered video output
 
 ## Phase 5 (Weeks 14-16): Growth, Analytics, and Hardening
 
@@ -112,15 +112,15 @@ Goals:
 - Prepare for scale and product iteration
 
 Deliverables:
-- Usage analytics dashboard (jobs, export formats, edit activity)
-- Queue-based processing option for long-running jobs
-- Cost and latency monitoring for Soniox/Azure/Supabase
-- Security and compliance checklist (secrets, access policies, rate limits)
+- [ ] Usage analytics dashboard (jobs, export formats, edit activity)
+- [ ] Queue-based processing option for long-running jobs
+- [ ] Cost and latency monitoring for Soniox/Azure/Supabase
+- [ ] Security and compliance checklist (secrets, access policies, rate limits)
 
 Exit criteria:
-- End-to-end performance baseline documented
-- Cost per processed minute tracked and visible
-- Security review issues triaged or resolved
+- [ ] End-to-end performance baseline documented
+- [ ] Cost per processed minute tracked and visible
+- [ ] Security review issues triaged or resolved
 
 ## Cross-Cutting Workstreams (Run Every Phase)
 
