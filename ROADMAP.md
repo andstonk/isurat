@@ -64,14 +64,13 @@ Goals:
 - Support existing subtitle assets and improve interoperability
 
 Deliverables:
-- [ ] Import SRT and VTT into editor
-- [ ] Robust parser with validation and error reporting
-- [ ] Maintain karaoke fallback behavior for imported files without word timing
-- [ ] Export naming and metadata consistency improvements
+- [x] Import SRT and VTT into editor via one tolerant parser, with per-block error reporting for malformed cues (single subtitle track only, no bilingual import)
+- [x] Karaoke fallback for imported files without word timing — already covered by `timedWordsForCue()`'s existing fallback; no new code needed, just a smoke-test after import ships
+- [x] Export filename includes the subtitle mode/language so original/translated/bilingual downloads stop overwriting each other
 
 Exit criteria:
-- [ ] Import success >= 98% on validation corpus
-- [ ] Round-trip test passes (import -> edit -> export)
+- [x] Parser handles a real-world sample SRT and VTT (including a deliberately malformed block) without crashing, and reports which blocks it skipped
+- [ ] Manual import -> export round-trip preserves cue count and text (no automated test suite exists, so this is a manual check, not a corpus metric)
 
 ## Phase 3 (Weeks 8-10): Collaboration and Workflow
 

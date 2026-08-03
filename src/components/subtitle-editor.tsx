@@ -15,6 +15,7 @@ import {
   findMatchingCueIndexes,
   formatTimestamp,
   isSubtitleFont,
+  parseSubtitleFile,
   READABILITY_LABELS,
   readabilityStats,
   replaceInCues,
@@ -129,6 +130,7 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const playbackFrameRef = useRef<number | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const doc = useHistoryState<EditableDocument>({ cues: [], settings: DEFAULT_SUBTITLE_SETTINGS, translationStyle: DEFAULT_TRANSLATION_STYLE });
   const { cues, settings, translationStyle } = doc.value;
@@ -404,12 +406,20 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     setSearchMatchIndex(0);
     setMessage(`Replaced text in ${affected} cue${affected === 1 ? "" : "s"}. Save to keep changes.`);
   }
+  async function importSubtitleFile(file: File) {
+    const { cues: importedCues, skipped } = parseSubtitleFile(await file.text());
+    if (!importedCues.length) return setMessage("No valid subtitle cues found in that file.");
+    doc.set((current) => ({ ...current, cues: importedCues }), { immediate: true });
+    setSelectedCues(new Set()); setExpandedCue(null); setSelectedWord(null); setSplitCueIndex(null);
+    setMessage(`Imported ${importedCues.length} cue${importedCues.length === 1 ? "" : "s"}${skipped.length ? ` (${skipped.length} block${skipped.length === 1 ? "" : "s"} skipped — check formatting)` : ""}. This replaces the current subtitles; save to keep changes.`);
+  }
   async function download(format: string) {
     const accessToken = await token();
     const response = await fetch(`/api/videos/${videoId}/export?format=${format}&mode=${subtitleMode}`, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) return setMessage((await response.json()).error);
     const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement("a");
-    anchor.href = url; anchor.download = `${video?.file_name.replace(/\.mp4$/i, "")}.${format}`; anchor.click(); URL.revokeObjectURL(url);
+    const modeSuffix = hasTranslation ? `.${subtitleMode === "bilingual" ? "bilingual" : subtitleMode === "translated" ? video?.translation_target_language ?? "translated" : video?.language ?? "original"}` : "";
+    anchor.href = url; anchor.download = `${video?.file_name.replace(/\.mp4$/i, "")}${modeSuffix}.${format}`; anchor.click(); URL.revokeObjectURL(url);
   }
 
   const hasTranslation = video?.translation_status === "ready" && cues.some((cue) => cue.translated_text);
@@ -420,7 +430,7 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     ? timedWordsForCue(activeCue).map((word, index) => <span key={`${word.start_ms}-${index}`} className="karaoke-word" style={wordStyle(word.style, settings.karaoke_enabled && time >= word.start_ms && time < word.end_ms ? settings.karaoke_color : undefined)}>{word.text}</span>)
     : activeCue?.text;
 
-  return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message || fontMessage}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={doc.undo} disabled={!doc.canUndo} title="Undo (Ctrl+Z)">↺ Undo</button><button className="secondary-button" onClick={doc.redo} disabled={!doc.canRedo} title="Redo (Ctrl+Y)">↻ Redo</button><button className="secondary-button" onClick={save}>Save changes</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
+  return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message || fontMessage}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={doc.undo} disabled={!doc.canUndo} title="Undo (Ctrl+Z)">↺ Undo</button><button className="secondary-button" onClick={doc.redo} disabled={!doc.canRedo} title="Redo (Ctrl+Y)">↻ Redo</button><button className="secondary-button" onClick={save}>Save changes</button><input ref={importInputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" style={{ display: "none" }} onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) await importSubtitleFile(file); }} /><button className="secondary-button" onClick={() => importInputRef.current?.click()} title="Import an SRT or VTT file, replacing the current subtitles">↑ Import</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
     <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current); updatePlaybackTime(); }} onPause={stopPlaybackTimer} onEnded={stopPlaybackTimer} onSeeked={(event) => setTime(event.currentTarget.currentTime * 1000)} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}{activeCue && <div className="live-caption">{subtitleMode !== "translated" && <span className="caption-line" style={captionStyle(activeOriginalStyle)}>{originalCaption}</span>}{subtitleMode === "bilingual" && activeCue.translated_text && <span className="caption-line translated-caption" style={captionStyle(translationStyle)}>{activeCue.translated_text}</span>}{subtitleMode === "translated" && <span className="caption-line" style={captionStyle(translationStyle)}>{activeCue.translated_text ?? activeCue.text}</span>}</div>}</div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
       <div className="subtitle-controls"><div className="controls-heading"><div><span className="section-label">ORIGINAL APPEARANCE</span><h2>Original subtitle style</h2></div><small>Preview updates instantly</small></div>
         <TrackStyleControls style={settings} name="Original" googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={patchSettings} />

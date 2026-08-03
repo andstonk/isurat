@@ -348,3 +348,38 @@ export function toVtt(cues: SubtitleCue[], mode: SubtitleExportMode = "original"
 export function toTxt(cues: SubtitleCue[], mode: SubtitleExportMode = "original") {
   return cues.map((cue) => cueText(cue, mode)).join("\n") + "\n";
 }
+
+export type ParsedSubtitleFile = {
+  cues: SubtitleCue[];
+  skipped: string[];
+};
+
+const IMPORT_TIMESTAMP = /(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})/;
+
+function importTimestampToMs(hours: string, minutes: string, seconds: string, milliseconds: string) {
+  return (Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)) * 1000 + Number(milliseconds.padEnd(3, "0").slice(0, 3));
+}
+
+// Tolerant of both SRT (",") and VTT (".") millisecond separators, so one parser covers both formats — see ROADMAP.md Phase 2.
+export function parseSubtitleFile(content: string): ParsedSubtitleFile {
+  const normalized = content.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const cues: SubtitleCue[] = [];
+  const skipped: string[] = [];
+  blocks.forEach((block, blockNumber) => {
+    if (/^WEBVTT/i.test(block) || /^NOTE\b/.test(block) || /^STYLE\b/.test(block)) return;
+    const lines = block.split("\n");
+    const timestampLineIndex = lines.findIndex((line) => IMPORT_TIMESTAMP.test(line));
+    if (timestampLineIndex === -1) { skipped.push(`Block ${blockNumber + 1}: no valid timestamp line found.`); return; }
+    const match = lines[timestampLineIndex].match(IMPORT_TIMESTAMP)!;
+    const start_ms = importTimestampToMs(match[1], match[2], match[3], match[4]);
+    const end_ms = importTimestampToMs(match[5], match[6], match[7], match[8]);
+    if (!(end_ms > start_ms)) { skipped.push(`Block ${blockNumber + 1}: end time is not after start time.`); return; }
+    const text = lines.slice(timestampLineIndex + 1).join(" ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    if (!text) { skipped.push(`Block ${blockNumber + 1}: subtitle text is empty.`); return; }
+    cues.push({ cue_index: 0, start_ms, end_ms, text });
+  });
+  cues.sort((a, b) => a.start_ms - b.start_ms);
+  cues.forEach((cue, index) => { cue.cue_index = index; });
+  return { cues, skipped };
+}

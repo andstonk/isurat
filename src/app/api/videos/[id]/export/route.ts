@@ -13,16 +13,19 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const mode = requestedMode as SubtitleExportMode;
   const { id } = await context.params;
   const db = createAdminSupabase();
-  const { data: video } = await db.from("videos").select("file_name").eq("id", id).eq("user_id", user.id).single();
+  const { data: video } = await db.from("videos").select("file_name, language, translation_target_language").eq("id", id).eq("user_id", user.id).single();
   if (!video) return NextResponse.json({ error: "Video not found." }, { status: 404 });
   const { data } = await db.from("subtitle_cues").select("cue_index, start_ms, end_ms, text, translated_text").eq("video_id", id).order("cue_index");
   const cues = (data ?? []) as SubtitleCue[];
-  if (mode !== "original" && !cues.some((cue) => cue.translated_text)) return NextResponse.json({ error: "This video has no translated subtitles." }, { status: 400 });
+  const hasTranslationTrack = cues.some((cue) => cue.translated_text);
+  if (mode !== "original" && !hasTranslationTrack) return NextResponse.json({ error: "This video has no translated subtitles." }, { status: 400 });
   const content = format === "srt" ? toSrt(cues, mode) : format === "vtt" ? toVtt(cues, mode) : toTxt(cues, mode);
   const mime = format === "vtt" ? "text/vtt" : "text/plain";
   const baseName = video.file_name.replace(/\.mp4$/i, "").replace(/[^a-z0-9_-]+/gi, "-");
+  // Only suffix when a translation track exists — that's the only case where different modes would otherwise collide on one filename.
+  const modeSuffix = hasTranslationTrack ? `.${mode === "bilingual" ? "bilingual" : mode === "translated" ? video.translation_target_language ?? "translated" : video.language ?? "original"}` : "";
   return new NextResponse(content, { headers: {
     "Content-Type": `${mime}; charset=utf-8`,
-    "Content-Disposition": `attachment; filename="${baseName}.${format}"`,
+    "Content-Disposition": `attachment; filename="${baseName}${modeSuffix}.${format}"`,
   }});
 }
