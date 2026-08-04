@@ -106,7 +106,7 @@ Deliverables:
 - [ ] Position/alignment controls with safe-title guides
 - [ ] Customizable text glow controls (enabled, color, blur radius, and intensity)
 - [ ] Preview/render parity for project, cue, and word-level style overrides
-- [ ] Optional speaker labels and accessibility markers
+- [ ] Optional speaker labels and accessibility markers — rendering only; detecting *who* is speaking is its own workstream, see "Speaker Diarization" below
 
 Exit criteria:
 - [ ] Burn-in export works for target max file size and duration
@@ -128,6 +128,30 @@ Exit criteria:
 - [ ] End-to-end performance baseline documented
 - [ ] Cost per processed minute tracked and visible
 - [ ] Security review issues triaged or resolved
+
+## Speaker Diarization (Unscheduled)
+
+Goal: when two or more people speak, tell them apart — label each subtitle with who said it, and let the creator rename those speakers to real names.
+
+This is listed separately rather than folded into a phase because it cuts across the whole pipeline: transcription, data model, editor, and export. Phase 4's "speaker labels" line is only the rendering half and depends on this landing first.
+
+Deliverables:
+- [ ] Request speaker tags from Soniox and carry the per-token speaker through `tokensToSubtitleCues` / `tokensToBilingualCues` (`src/lib/soniox.ts`) — the transcription request currently sets `enable_language_identification` but asks for no diarization
+- [ ] Persist a speaker per cue, and per word since tokens carry it (migration; `subtitle_cues.words` already stores per-word jsonb, so word-level may need no new column)
+- [ ] Break cues at speaker changes so one cue never mixes two people, and keep that boundary through split/merge and "Apply word limit"
+- [ ] Editor: show the speaker on each cue row, rename a speaker project-wide ("Speaker 1" → "Maria"), and reassign a cue the model tagged wrong
+- [ ] Optional speaker prefix in SRT/VTT/TXT exports (`Maria: …`), off by default so existing exports don't change shape
+- [ ] Per-speaker style overrides — reuses the existing cue-level style cascade rather than adding a fourth level
+
+Exit criteria:
+- [ ] A two-person conversation is split into per-speaker cues without manual work
+- [ ] A mis-tagged cue can be reassigned in the editor without touching the database
+- [ ] Renaming a speaker updates every cue attributed to them
+
+Open questions to settle before scoping this:
+- **Does the configured Soniox model actually return speaker tags, and does it cost extra?** `stt-async-v5` is what `SONIOX_TRANSCRIPTION_MODEL` defaults to. Verify against Soniox's current docs before estimating — this whole workstream is small if diarization is a request flag and large if it needs a separate model.
+- Diarization is unreliable on overlapping speech and similar voices. Manual reassignment in the editor is a deliverable above, not a nice-to-have, because the model will get some cues wrong.
+- Translated projects take a different token path (`tokensToBilingualCues`), so speaker attribution has to be threaded through both or explicitly scoped to original-only at first.
 
 ## Monetization: Payment Tiers (Out of Phase Order, Currently Blocked)
 
@@ -226,6 +250,7 @@ Word overrides take precedence over cue overrides, and cue overrides take preced
 - Burn-in rendering pipeline: 2.5 to 4 weeks
 - Analytics and hardening: 2 to 3 weeks
 - Payment tiers and billing: built (~1 week of work, parked); budget 3 to 5 days to re-point it at a new provider, plus provider onboarding/verification lead time
+- Speaker diarization: 1 to 1.5 weeks if Soniox returns speaker tags from a request flag; significantly more if it needs a second provider or model — estimate is not firm until that is verified
 
 ## Optional Faster Plan (Lean 8 Weeks)
 
