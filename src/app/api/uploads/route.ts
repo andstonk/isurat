@@ -5,9 +5,8 @@ import { getRequestUser } from "@/lib/api-auth";
 import { getVideoContainer } from "@/lib/azure";
 import { createAdminSupabase } from "@/lib/supabase";
 import { isTranslationLanguage } from "@/lib/subtitles";
+import { formatUploadLimit, maxUploadBytesForEmail } from "@/lib/upload-limits";
 import { logError } from "@/lib/error-log";
-
-const MAX_SIZE = 25 * 1024 * 1024;
 
 // Videos are always re-encoded to H.264/AAC MP4 during processing (see
 // transcodeToH264Mp4 in /api/jobs/process), so any container ffmpeg can read
@@ -32,8 +31,9 @@ export async function POST(request: NextRequest) {
   if (!body.fileName || !isAllowedUpload(body.fileName, body.contentType ?? "")) {
     return NextResponse.json({ error: "Select an MP4 or MOV video." }, { status: 400 });
   }
-  if (!body.fileSize || body.fileSize > MAX_SIZE) {
-    return NextResponse.json({ error: "Videos must be 25 MB or smaller for this MVP." }, { status: 400 });
+  const maxSize = maxUploadBytesForEmail(user.email);
+  if (!body.fileSize || body.fileSize > maxSize) {
+    return NextResponse.json({ error: `Videos must be ${formatUploadLimit(maxSize)} or smaller.` }, { status: 400 });
   }
   if (body.targetLanguage && !isTranslationLanguage(body.targetLanguage)) {
     return NextResponse.json({ error: "Select a supported translation language." }, { status: 400 });

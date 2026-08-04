@@ -32,6 +32,7 @@ supabase/migrations/005_add_karaoke_subtitles.sql
 supabase/migrations/006_add_advanced_subtitle_styles.sql
 supabase/migrations/007_add_error_logs.sql
 supabase/migrations/009_add_collaboration.sql
+supabase/migrations/010_raise_upload_ceiling.sql
 ```
 
 See `MIGRATIONS.md` for the validation checklist to follow whenever a new migration is added.
@@ -82,7 +83,9 @@ For Google sign-in, enable Google under **Authentication → Providers**, create
 
 Email/password registration also requires the Email provider to be enabled. When email confirmation is enabled, configure a working SMTP provider and ensure the confirmation template redirects to the application's `/auth/callback` URL.
 
-The MVP limits video uploads (MP4/MOV/M4V) to 25 MB, re-encodes them to H.264/AAC MP4 via ffmpeg before playback and transcription, and waits for Soniox's asynchronous transcription inside the processing request. A translation target can be selected before upload; the editor then supports original-only, translated-only, or double subtitles. For production-scale videos, submit jobs from an Azure Function or queue worker and use a Soniox webhook to update PostgreSQL when processing completes.
+The MVP limits video uploads (MP4/MOV/M4V) to 25 MB by default, re-encodes them to H.264/AAC MP4 via ffmpeg before playback and transcription, and waits for Soniox's asynchronous transcription inside the processing request.
+
+Specific accounts can be granted a larger limit by listing their email addresses in `LARGE_UPLOAD_EMAILS` (comma-separated); `LARGE_UPLOAD_LIMIT_MB` sets what they get, defaulting to and capped at 100 MB. The cap is not arbitrary — processing loads the whole video into memory, writes it to Vercel's 512 MB `/tmp`, transcodes it, and reads it back, all inside a 5-minute function timeout that also covers transcription. Going meaningfully above 100 MB means moving processing off the request first (streaming transcode, queue worker, Soniox webhook); see `src/lib/upload-limits.ts`. A translation target can be selected before upload; the editor then supports original-only, translated-only, or double subtitles. For production-scale videos, submit jobs from an Azure Function or queue worker and use a Soniox webhook to update PostgreSQL when processing completes.
 
 ### 5. Run locally
 
