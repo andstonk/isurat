@@ -4,6 +4,8 @@ This project has no Supabase CLI project link and no automated migration runner.
 
 This checklist is the validation process to follow every time a new migration file is added, until (if ever) that changes.
 
+**Note on the numbering gap:** there is no `008` on `main`. `008_add_subscriptions.sql` is part of the billing work parked in a `git stash` (see `ROADMAP.md`, "Monetization: Payment Tiers"), so `009_add_collaboration.sql` follows `007`. The gap is deliberate — it keeps the stashed file applicable unchanged if billing is ever restored. Apply the files that exist, in filename order; a missing number is not a missing migration.
+
 ## 1. Local validation
 
 Use a scratch Supabase project (not shared, not staging/prod) for this step.

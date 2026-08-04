@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { createBrowserSupabase } from "@/lib/supabase";
 import { TRANSLATION_LANGUAGES, type TranslationLanguage } from "@/lib/subtitles";
+import { DEFAULT_MAX_UPLOAD_BYTES, formatUploadLimit } from "@/lib/upload-limits";
 
 type Video = { id: string; file_name: string; file_size: number; status: string; error_message?: string; language?: string; created_at: string; updated_at: string };
 
@@ -28,6 +29,8 @@ export default function DashboardPage() {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [targetLanguage, setTargetLanguage] = useState<TranslationLanguage | "">("");
+  // Server-resolved: allowlisted accounts get a larger ceiling than the 25 MB default.
+  const [maxUploadBytes, setMaxUploadBytes] = useState(DEFAULT_MAX_UPLOAD_BYTES);
 
   const loadVideos = useCallback(async () => {
     try {
@@ -35,6 +38,7 @@ export default function DashboardPage() {
       if (response.status === 401) return router.push("/auth");
       const data = await response.json();
       setVideos(data.videos ?? []);
+      if (data.maxUploadBytes) setMaxUploadBytes(data.maxUploadBytes);
     } catch (error) { if (error instanceof Error && error.message === "AUTH_REQUIRED") router.push("/auth"); }
   }, [router]);
 
@@ -112,7 +116,7 @@ export default function DashboardPage() {
         </div>
         {status && <div className="status-banner" role="status"><span className={busy ? "status-pulse" : ""} />{status}</div>}
         <section className="project-list">
-          {videos.length === 0 ? <div className="empty-state"><b>No subtitle projects yet</b><p>Upload an MP4 up to 25 MB to create the first one.</p></div> : videos.map((video) => (
+          {videos.length === 0 ? <div className="empty-state"><b>No subtitle projects yet</b><p>Upload an MP4 up to {formatUploadLimit(maxUploadBytes)} to create the first one.</p></div> : videos.map((video) => (
             <article key={video.id} className="project-row">
               <div className="video-thumb">MP4</div><div className="project-meta"><h2>{video.file_name}</h2><p>{(video.file_size / 1024 / 1024).toFixed(1)} MB · {new Date(video.created_at).toLocaleDateString()}</p>{video.error_message && <small>{video.error_message}</small>}</div>
               <span className={`status-chip status-${video.status}`}>{video.status}</span>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/api-auth";
 import { createAdminSupabase } from "@/lib/supabase";
+import { maxUploadBytesForEmail } from "@/lib/upload-limits";
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request);
@@ -9,5 +10,6 @@ export async function GET(request: NextRequest) {
     .select("id, file_name, file_size, status, error_message, language, duration_ms, created_at, updated_at")
     .eq("user_id", user.id).order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: "Could not load videos." }, { status: 500 });
-  return NextResponse.json({ videos: data });
+  // Returned so the dashboard can state this user's real limit instead of a hardcoded number.
+  return NextResponse.json({ videos: data, maxUploadBytes: maxUploadBytesForEmail(user.email) });
 }

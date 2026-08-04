@@ -42,6 +42,36 @@ limit 50;
 - `POST /api/jobs/process` — transcription/translation failed (Soniox, Azure download, or cue insert). This is the most common source of `failed` videos.
 - `PUT /api/videos/[id]/subtitles` — saving edited subtitles failed (DB insert/update failed).
 
+## Phase 3 manual check (version history and share links)
+
+The collaboration features added in `009_add_collaboration.sql` talk to the database on every path, and there is no automated test suite. After applying migration `009`, walk this once against a real project:
+
+1. **Snapshot** — open a project, edit a cue, open **History**, name a snapshot, save it. Confirm the snapshot's cue count matches the editor and that the edit was persisted first (the panel saves before snapshotting).
+2. **Restore** — change several cues, save, then restore the earlier snapshot. The editor should reload with the old cues, and a new `Before restoring "…"` snapshot should appear at the top of the list.
+3. **Undo a restore** — restore that `Before restoring …` entry. This is the recovery path that replaces database intervention; if it fails, treat it as a release blocker.
+4. **Pruning** — a project keeps only its 20 most recent snapshots (`MAX_VERSIONS_PER_PROJECT` in `src/lib/collaboration.ts`). Confirm the oldest disappears rather than the insert failing.
+5. **Share link** — create a 7-day link, open it in a private window with no session. The video, styled captions (including custom fonts), and cue list should render with no editing controls.
+6. **Revoke** — revoke the link and reload the shared page. It should show "This link was turned off", not the project.
+7. **Expiry** — to test expiry without waiting, set `expires_at` into the past directly:
+   ```sql
+   update share_links set expires_at = now() - interval '1 day' where id = '<link-id>';
+   ```
+   The shared page should then show the expired state.
+
+Useful queries:
+
+```sql
+-- Snapshot history for a project (payload omitted; `cues` is large)
+select id, label, created_at, cue_count from project_versions
+where video_id = '<video-id>' order by created_at desc;
+
+-- Live share links and their usage
+select id, created_at, expires_at, revoked_at, view_count, last_viewed_at
+from share_links where video_id = '<video-id>' order by created_at desc;
+```
+
+`share_links.token_hash` holds only a SHA-256 hash — the raw token is shown once at creation and cannot be recovered from the database. If a viewer loses their link, revoke it and create a new one.
+
 ## Manual SQL fallback
 
 If the Retry button path is ever insufficient (e.g. a video is wedged in a state the API won't accept), reset it directly from the SQL editor, then use Retry from the UI:
