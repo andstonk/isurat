@@ -135,6 +135,57 @@ export function isSubtitleFont(value: unknown): value is SubtitleFont {
   return typeof value === "string" && SUBTITLE_FONTS.some((font) => font === value);
 }
 
+const isHexColor = (value: unknown): value is string => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+
+// Turns the flat `videos.subtitle_*` / `videos.translation_*` columns into a style object,
+// substituting defaults for anything missing or out of range. Used by the editor and by the
+// read-only share view so both render a project from the same normalization rules.
+function trackStyleFromVideoRow(row: Record<string, unknown>, prefix: "subtitle" | "translation", defaults: SubtitleTrackStyle): SubtitleTrackStyle {
+  const read = (key: string) => row[`${prefix}_${key}`];
+  const fontSource = isFontSource(read("font_source")) ? read("font_source") as FontSource : "system";
+  const fontFamily = read("font_family");
+  const userFontId = read("user_font_id");
+  const inRange = (key: string, min: number, max: number, fallback: number) => {
+    const value = read(key);
+    return typeof value === "number" && value >= min && value <= max ? value : fallback;
+  };
+  const flag = (key: string, fallback: boolean) => typeof read(key) === "boolean" ? read(key) as boolean : fallback;
+  const color = (key: string, fallback: string) => isHexColor(read(key)) ? read(key) as string : fallback;
+  return {
+    font_family: fontSource === "google" || fontSource === "upload"
+      ? (typeof fontFamily === "string" ? fontFamily.slice(0, 100) : "") || defaults.font_family
+      : isSubtitleFont(fontFamily) ? fontFamily : defaults.font_family,
+    font_source: fontSource,
+    user_font_id: fontSource === "upload" && typeof userFontId === "string" ? userFontId : null,
+    text_color: color("text_color", defaults.text_color),
+    font_size: inRange("font_size", 12, 64, defaults.font_size),
+    bold: flag("bold", defaults.bold),
+    italic: flag("italic", defaults.italic),
+    underline: flag("underline", defaults.underline),
+    strikethrough: flag("strikethrough", defaults.strikethrough),
+    backdrop_color: color("backdrop_color", defaults.backdrop_color),
+    backdrop_opacity: inRange("backdrop_opacity", 0, 100, defaults.backdrop_opacity),
+    glow_enabled: flag("glow_enabled", defaults.glow_enabled),
+    glow_color: color("glow_color", defaults.glow_color),
+    glow_blur: inRange("glow_blur", 0, 40, defaults.glow_blur),
+    glow_intensity: inRange("glow_intensity", 0, 100, defaults.glow_intensity),
+  };
+}
+
+export function settingsFromVideoRow(row: Record<string, unknown>): SubtitleSettings {
+  const wordsPerCue = row.words_per_cue;
+  return {
+    ...trackStyleFromVideoRow(row, "subtitle", DEFAULT_SUBTITLE_SETTINGS),
+    words_per_cue: typeof wordsPerCue === "number" && wordsPerCue >= 2 && wordsPerCue <= 16 ? wordsPerCue : DEFAULT_SUBTITLE_SETTINGS.words_per_cue,
+    karaoke_enabled: typeof row.karaoke_enabled === "boolean" ? row.karaoke_enabled : DEFAULT_SUBTITLE_SETTINGS.karaoke_enabled,
+    karaoke_color: isHexColor(row.karaoke_color) ? row.karaoke_color : DEFAULT_SUBTITLE_SETTINGS.karaoke_color,
+  };
+}
+
+export function translationStyleFromVideoRow(row: Record<string, unknown>): SubtitleTrackStyle {
+  return trackStyleFromVideoRow(row, "translation", DEFAULT_TRANSLATION_STYLE);
+}
+
 export function isSubtitleTrackStyle(value: unknown): value is SubtitleTrackStyle {
   if (!value || typeof value !== "object") return false;
   const style = value as Record<string, unknown>;

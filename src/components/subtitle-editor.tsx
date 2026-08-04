@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { CaptionOverlay } from "@/components/caption-overlay";
 import { FontLibraryPanel } from "@/components/font-library-panel";
 import { FontPicker } from "@/components/font-picker";
-import { loadGoogleFont, loadUploadedFont, resolvedFontFamily } from "@/lib/font-loader";
-import { isFontSource, type GoogleFont, type UserFont } from "@/lib/fonts";
+import { ShareLinkPanel } from "@/components/share-link-panel";
+import { VersionHistoryPanel } from "@/components/version-history-panel";
+import { loadGoogleFont, loadUploadedFont } from "@/lib/font-loader";
+import { type GoogleFont, type UserFont } from "@/lib/fonts";
 import { createBrowserSupabase } from "@/lib/supabase";
 import { useHistoryState } from "@/lib/use-history-state";
 import {
@@ -14,14 +17,15 @@ import {
   DEFAULT_TRANSLATION_STYLE,
   findMatchingCueIndexes,
   formatTimestamp,
-  isSubtitleFont,
   parseSubtitleFile,
   READABILITY_LABELS,
   readabilityStats,
   replaceInCues,
   resegmentCues,
+  settingsFromVideoRow,
   timedWordsForCue,
   translationLanguageLabel,
+  translationStyleFromVideoRow,
   type SubtitleCue,
   type SubtitleExportMode,
   type SubtitleSettings,
@@ -51,30 +55,6 @@ function TrackStyleControls({ style, name, googleFonts, userFonts, googleUnavail
     <label className="range-control">Glow blur <output>{style.glow_blur}px</output><input aria-label={`${name} subtitle glow blur`} type="range" min="0" max="40" step="1" value={style.glow_blur} disabled={!style.glow_enabled} onChange={(event) => patch({ glow_blur: Number(event.target.value) })} /></label>
     <label className="range-control">Glow intensity <output>{style.glow_intensity}%</output><input aria-label={`${name} subtitle glow intensity`} type="range" min="0" max="100" step="1" value={style.glow_intensity} disabled={!style.glow_enabled} onChange={(event) => patch({ glow_intensity: Number(event.target.value) })} /></label>
   </div>;
-}
-
-function captionStyle(style: SubtitleTrackStyle) {
-  const backdropAlpha = Math.round(style.backdrop_opacity * 2.55).toString(16).padStart(2, "0");
-  const glowAlpha = Math.round(style.glow_intensity * 2.55).toString(16).padStart(2, "0");
-  return {
-    fontFamily: resolvedFontFamily(style),
-    fontSize: `${style.font_size}px`,
-    fontWeight: style.bold ? 700 : 400,
-    fontStyle: style.italic ? "italic" : "normal",
-    textDecoration: [style.underline && "underline", style.strikethrough && "line-through"].filter(Boolean).join(" ") || "none",
-    color: style.text_color,
-    backgroundColor: `${style.backdrop_color}${backdropAlpha}`,
-    textShadow: style.glow_enabled ? `0 0 ${style.glow_blur}px ${style.glow_color}${glowAlpha}` : "none",
-  } as const;
-}
-
-function wordStyle(style?: SubtitleWordStyle, karaokeColor?: string) {
-  return {
-    fontWeight: style?.bold === undefined ? undefined : style.bold ? 700 : 400,
-    fontStyle: style?.italic === undefined ? undefined : style.italic ? "italic" : "normal",
-    textDecoration: style?.underline === undefined ? undefined : style.underline ? "underline" : "none",
-    color: karaokeColor ?? style?.text_color,
-  } as const;
 }
 
 type Video = {
@@ -139,6 +119,8 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   const [fontQuota, setFontQuota] = useState({ used: 0, limit: 50 });
   const [googleUnavailable, setGoogleUnavailable] = useState(false);
   const [fontLibraryOpen, setFontLibraryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [expandedCue, setExpandedCue] = useState<number | null>(null);
   const [selectedWord, setSelectedWord] = useState<{ cueIndex: number; wordIndex: number } | null>(null);
   const [splitCueIndex, setSplitCueIndex] = useState<number | null>(null);
@@ -204,47 +186,8 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     if (loadedVideo.translation_status === "ready") setSubtitleMode("bilingual");
     doc.reset({
       cues: data.cues,
-      settings: {
-      font_family: loadedVideo.subtitle_font_source === "google" || loadedVideo.subtitle_font_source === "upload"
-        ? loadedVideo.subtitle_font_family?.slice(0, 100) || DEFAULT_SUBTITLE_SETTINGS.font_family
-        : isSubtitleFont(loadedVideo.subtitle_font_family) ? loadedVideo.subtitle_font_family : DEFAULT_SUBTITLE_SETTINGS.font_family,
-      font_source: isFontSource(loadedVideo.subtitle_font_source) ? loadedVideo.subtitle_font_source : "system",
-      user_font_id: loadedVideo.subtitle_font_source === "upload" ? loadedVideo.subtitle_user_font_id ?? null : null,
-      text_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.subtitle_text_color ?? "") ? loadedVideo.subtitle_text_color! : DEFAULT_SUBTITLE_SETTINGS.text_color,
-      font_size: loadedVideo.subtitle_font_size && loadedVideo.subtitle_font_size >= 12 && loadedVideo.subtitle_font_size <= 64 ? loadedVideo.subtitle_font_size : DEFAULT_SUBTITLE_SETTINGS.font_size,
-      bold: loadedVideo.subtitle_bold ?? DEFAULT_SUBTITLE_SETTINGS.bold,
-      italic: loadedVideo.subtitle_italic ?? DEFAULT_SUBTITLE_SETTINGS.italic,
-      underline: loadedVideo.subtitle_underline ?? DEFAULT_SUBTITLE_SETTINGS.underline,
-      strikethrough: loadedVideo.subtitle_strikethrough ?? DEFAULT_SUBTITLE_SETTINGS.strikethrough,
-      backdrop_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.subtitle_backdrop_color ?? "") ? loadedVideo.subtitle_backdrop_color! : DEFAULT_SUBTITLE_SETTINGS.backdrop_color,
-      backdrop_opacity: loadedVideo.subtitle_backdrop_opacity ?? DEFAULT_SUBTITLE_SETTINGS.backdrop_opacity,
-      glow_enabled: loadedVideo.subtitle_glow_enabled ?? DEFAULT_SUBTITLE_SETTINGS.glow_enabled,
-      glow_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.subtitle_glow_color ?? "") ? loadedVideo.subtitle_glow_color! : DEFAULT_SUBTITLE_SETTINGS.glow_color,
-      glow_blur: loadedVideo.subtitle_glow_blur ?? DEFAULT_SUBTITLE_SETTINGS.glow_blur,
-      glow_intensity: loadedVideo.subtitle_glow_intensity ?? DEFAULT_SUBTITLE_SETTINGS.glow_intensity,
-      words_per_cue: loadedVideo.words_per_cue ?? DEFAULT_SUBTITLE_SETTINGS.words_per_cue,
-      karaoke_enabled: loadedVideo.karaoke_enabled ?? DEFAULT_SUBTITLE_SETTINGS.karaoke_enabled,
-      karaoke_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.karaoke_color ?? "") ? loadedVideo.karaoke_color! : DEFAULT_SUBTITLE_SETTINGS.karaoke_color,
-      },
-      translationStyle: {
-      font_family: loadedVideo.translation_font_source === "google" || loadedVideo.translation_font_source === "upload"
-        ? loadedVideo.translation_font_family?.slice(0, 100) || DEFAULT_TRANSLATION_STYLE.font_family
-        : isSubtitleFont(loadedVideo.translation_font_family) ? loadedVideo.translation_font_family : DEFAULT_TRANSLATION_STYLE.font_family,
-      font_source: isFontSource(loadedVideo.translation_font_source) ? loadedVideo.translation_font_source : "system",
-      user_font_id: loadedVideo.translation_font_source === "upload" ? loadedVideo.translation_user_font_id ?? null : null,
-      text_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.translation_text_color ?? "") ? loadedVideo.translation_text_color! : DEFAULT_TRANSLATION_STYLE.text_color,
-      font_size: loadedVideo.translation_font_size && loadedVideo.translation_font_size >= 12 && loadedVideo.translation_font_size <= 64 ? loadedVideo.translation_font_size : DEFAULT_TRANSLATION_STYLE.font_size,
-      bold: loadedVideo.translation_bold ?? DEFAULT_TRANSLATION_STYLE.bold,
-      italic: loadedVideo.translation_italic ?? DEFAULT_TRANSLATION_STYLE.italic,
-      underline: loadedVideo.translation_underline ?? DEFAULT_TRANSLATION_STYLE.underline,
-      strikethrough: loadedVideo.translation_strikethrough ?? DEFAULT_TRANSLATION_STYLE.strikethrough,
-      backdrop_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.translation_backdrop_color ?? "") ? loadedVideo.translation_backdrop_color! : DEFAULT_TRANSLATION_STYLE.backdrop_color,
-      backdrop_opacity: loadedVideo.translation_backdrop_opacity ?? DEFAULT_TRANSLATION_STYLE.backdrop_opacity,
-      glow_enabled: loadedVideo.translation_glow_enabled ?? DEFAULT_TRANSLATION_STYLE.glow_enabled,
-      glow_color: /^#[0-9a-f]{6}$/i.test(loadedVideo.translation_glow_color ?? "") ? loadedVideo.translation_glow_color! : DEFAULT_TRANSLATION_STYLE.glow_color,
-      glow_blur: loadedVideo.translation_glow_blur ?? DEFAULT_TRANSLATION_STYLE.glow_blur,
-      glow_intensity: loadedVideo.translation_glow_intensity ?? DEFAULT_TRANSLATION_STYLE.glow_intensity,
-      },
+      settings: settingsFromVideoRow(loadedVideo as unknown as Record<string, unknown>),
+      translationStyle: translationStyleFromVideoRow(loadedVideo as unknown as Record<string, unknown>),
     });
     setSelectedCues(new Set());
     setMessage("");
@@ -299,11 +242,13 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
   function patchTranslationStyle(patch: Partial<SubtitleTrackStyle>, immediate?: boolean) {
     doc.set((current) => ({ ...current, translationStyle: { ...current.translationStyle, ...patch } }), { immediate });
   }
+  // Returns whether the save succeeded so the snapshot panel can refuse to snapshot stale state.
   async function save() {
     doc.commitPending();
     setMessage("Saving…"); const accessToken = await token();
     const response = await fetch(`/api/videos/${videoId}/subtitles`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cues, settings, translationStyle }) });
     const data = await response.json(); setMessage(response.ok ? "All changes saved." : data.error);
+    return response.ok;
   }
   function applyWordLimit() {
     doc.set((current) => ({ ...current, cues: resegmentCues(current.cues, current.settings.words_per_cue) }), { immediate: true });
@@ -424,14 +369,9 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
 
   const hasTranslation = video?.translation_status === "ready" && cues.some((cue) => cue.translated_text);
   const targetLanguage = translationLanguageLabel(video?.translation_target_language);
-  const activeOriginalStyle = activeCue?.style_override ?? settings;
 
-  const originalCaption = activeCue && (settings.karaoke_enabled || timedWordsForCue(activeCue).some((word) => word.style))
-    ? timedWordsForCue(activeCue).map((word, index) => <span key={`${word.start_ms}-${index}`} className="karaoke-word" style={wordStyle(word.style, settings.karaoke_enabled && time >= word.start_ms && time < word.end_ms ? settings.karaoke_color : undefined)}>{word.text}</span>)
-    : activeCue?.text;
-
-  return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message || fontMessage}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={doc.undo} disabled={!doc.canUndo} title="Undo (Ctrl+Z)">↺ Undo</button><button className="secondary-button" onClick={doc.redo} disabled={!doc.canRedo} title="Redo (Ctrl+Y)">↻ Redo</button><button className="secondary-button" onClick={save}>Save changes</button><input ref={importInputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" style={{ display: "none" }} onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) await importSubtitleFile(file); }} /><button className="secondary-button" onClick={() => importInputRef.current?.click()} title="Import an SRT or VTT file, replacing the current subtitles">↑ Import</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
-    <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current); updatePlaybackTime(); }} onPause={stopPlaybackTimer} onEnded={stopPlaybackTimer} onSeeked={(event) => setTime(event.currentTarget.currentTime * 1000)} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}{activeCue && <div className="live-caption">{subtitleMode !== "translated" && <span className="caption-line" style={captionStyle(activeOriginalStyle)}>{originalCaption}</span>}{subtitleMode === "bilingual" && activeCue.translated_text && <span className="caption-line translated-caption" style={captionStyle(translationStyle)}>{activeCue.translated_text}</span>}{subtitleMode === "translated" && <span className="caption-line" style={captionStyle(translationStyle)}>{activeCue.translated_text ?? activeCue.text}</span>}</div>}</div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
+  return <AppShell><div className="editor-page"><div className="editor-toolbar"><div><span className="section-label">SUBTITLE EDITOR</span><h1>{video?.file_name ?? "Project"}</h1></div><div className="toolbar-actions"><span role="status">{message || fontMessage}</span>{hasTranslation && <label className="track-mode-control">Subtitle track<select value={subtitleMode} onChange={(event) => setSubtitleMode(event.target.value as SubtitleExportMode)}><option value="original">Original only</option><option value="translated">{targetLanguage} only</option><option value="bilingual">Double subtitles</option></select></label>}<button className="secondary-button" onClick={doc.undo} disabled={!doc.canUndo} title="Undo (Ctrl+Z)">↺ Undo</button><button className="secondary-button" onClick={doc.redo} disabled={!doc.canRedo} title="Redo (Ctrl+Y)">↻ Redo</button><button className="secondary-button" onClick={save}>Save changes</button><button className="secondary-button" onClick={() => setHistoryOpen(true)} title="Save and restore snapshots of this project">⟲ History</button><button className="secondary-button" onClick={() => setShareOpen(true)} title="Create a read-only link to this project">⇗ Share</button><input ref={importInputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" style={{ display: "none" }} onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) await importSubtitleFile(file); }} /><button className="secondary-button" onClick={() => importInputRef.current?.click()} title="Import an SRT or VTT file, replacing the current subtitles">↑ Import</button>{["srt", "vtt", "txt"].map((format) => <button key={format} className="primary-button small" onClick={() => download(format)}>↓ {format.toUpperCase()}</button>)}</div></div>
+    <div className="editor-workspace"><section className="preview-pane"><div className="player-wrap">{video?.playbackUrl ? <video ref={videoRef} controls preload="metadata" src={video.playbackUrl} onPlay={(event) => { event.currentTarget.defaultMuted = false; event.currentTarget.muted = false; if (event.currentTarget.volume === 0) event.currentTarget.volume = 1; if (playbackFrameRef.current != null) cancelAnimationFrame(playbackFrameRef.current); updatePlaybackTime(); }} onPause={stopPlaybackTimer} onEnded={stopPlaybackTimer} onSeeked={(event) => setTime(event.currentTarget.currentTime * 1000)} onTimeUpdate={(event) => setTime(event.currentTarget.currentTime * 1000)} /> : <div className="player-placeholder">Video preview</div>}<CaptionOverlay cue={activeCue} settings={settings} translationStyle={translationStyle} mode={subtitleMode} timeMs={time} /></div><p className="preview-help">{hasTranslation ? `Showing ${subtitleMode === "bilingual" ? "original and translated" : subtitleMode} subtitles. Downloads use this selection.` : "Play the video to preview your edited subtitles in context."}</p>
       <div className="subtitle-controls"><div className="controls-heading"><div><span className="section-label">ORIGINAL APPEARANCE</span><h2>Original subtitle style</h2></div><small>Preview updates instantly</small></div>
         <TrackStyleControls style={settings} name="Original" googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={patchSettings} />
         <div className="control-grid segmentation-controls">
@@ -444,5 +384,5 @@ export function SubtitleEditor({ videoId }: { videoId: string }) {
     <section className="cue-pane"><div className="cue-head"><b>{cues.length} subtitle cues</b><span>{hasTranslation ? `${video?.language?.toUpperCase() ?? "AUTO"} + ${video?.translation_target_language?.toUpperCase()}` : video?.language?.toUpperCase() ?? "AUTO"}</span></div>
       <div className="cue-bulk-tools"><span>{selectedCues.size > 0 ? `Shift ${selectedCues.size} selected cue${selectedCues.size === 1 ? "" : "s"}` : "Shift all timestamps"}</span><input aria-label="Timestamp shift amount" type="number" min="0" step="any" value={shiftAmount} onChange={(event) => setShiftAmount(Number(event.target.value))} /><select aria-label="Timestamp shift unit" value={shiftUnit} onChange={(event) => setShiftUnit(event.target.value as "ms" | "s")}><option value="s">sec</option><option value="ms">ms</option></select><button type="button" className="secondary-button small" onClick={() => shiftAllTimestamps(-shiftAmount)}>◂ Earlier</button><button type="button" className="secondary-button small" onClick={() => shiftAllTimestamps(shiftAmount)}>Later ▸</button>{selectedCues.size > 0 && <button type="button" className="clear-selection" onClick={() => setSelectedCues(new Set())}>Clear selection</button>}</div>
       <div className="cue-search-tools"><input aria-label="Find text in subtitles" type="text" placeholder="Find" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /><input aria-label="Replace with" type="text" placeholder="Replace with" value={replaceQuery} onChange={(event) => setReplaceQuery(event.target.value)} /><label className="match-case-toggle" title="Match case"><input type="checkbox" checked={matchCase} onChange={(event) => setMatchCase(event.target.checked)} />Aa</label>{searchQuery.trim() && <span className="match-count">{searchMatches.length ? `${Math.min(searchMatchIndex, searchMatches.length - 1) + 1}/${searchMatches.length}` : "0/0"}</span>}<button type="button" className="secondary-button small" disabled={!searchMatches.length} onClick={() => jumpToMatch(-1)}>◂</button><button type="button" className="secondary-button small" disabled={!searchMatches.length} onClick={() => jumpToMatch(1)}>▸</button><button type="button" className="secondary-button small" disabled={!searchMatches.length} onClick={replaceAll}>Replace all</button></div>
-      {cues.map((cue, index) => { const stats = readabilityStats(cue); return <article id={`cue-row-${index}`} className={`cue-row ${activeCue?.cue_index === cue.cue_index ? "active" : ""} ${selectedCues.has(index) ? "selected" : ""} ${currentSearchMatchCueIndex === index ? "search-match" : ""}`} key={cue.id ?? index} onClick={() => { if (videoRef.current) videoRef.current.currentTime = cue.start_ms / 1000; }}><div className="cue-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select subtitle ${index + 1} for bulk timestamp shift`} checked={selectedCues.has(index)} onChange={() => toggleCueSelection(index)} /><span className="cue-number">{index + 1}</span></div><div className="time-fields"><input aria-label="Start time in milliseconds" type="number" min="0" value={cue.start_ms} onChange={(e) => update(index, { start_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><span>→</span><input aria-label="End time in milliseconds" type="number" min="1" value={cue.end_ms} onChange={(e) => update(index, { end_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div><div className="cue-text-fields"><label><small>Original</small><textarea aria-label={`Original subtitle ${index + 1}`} value={cue.text} onChange={(e) => update(index, { text: e.target.value })} onBlur={doc.commitPending} /></label>{cue.translated_text != null && <label><small>{targetLanguage}</small><textarea aria-label={`${targetLanguage} subtitle ${index + 1}`} value={cue.translated_text} onChange={(e) => update(index, { translated_text: e.target.value })} onBlur={doc.commitPending} /></label>}{stats.issues.length > 0 && <div className="cue-readability" title={stats.issues.map((issue) => READABILITY_LABELS[issue]).join(" ")}>⚠ {[stats.issues.includes("cps-high") && `${stats.cps.toFixed(1)} CPS`, stats.issues.includes("wpm-high") && `${Math.round(stats.wpm)} WPM`, stats.issues.includes("duration-short") && "too brief", stats.issues.includes("duration-long") && "too long"].filter(Boolean).join(" · ")}</div>}<div className="cue-edit-actions"><button type="button" disabled={timedWordsForCue(cue).length < 2} onClick={(event) => { event.stopPropagation(); setSplitCueIndex((current) => current === index ? null : index); }}>{splitCueIndex === index ? "Cancel split" : "Split"}</button><button type="button" disabled={index === cues.length - 1} onClick={(event) => { event.stopPropagation(); mergeWithNext(index); }}>Merge ↓</button><button type="button" className={`cue-customize-toggle ${expandedCue === index ? "expanded" : ""} ${cue.style_override || cue.words?.some((word) => word.style) ? "customized" : ""}`} aria-expanded={expandedCue === index} onClick={(event) => { event.stopPropagation(); toggleCueCustomize(index); }}>Customize <span className="chevron">▼</span></button></div>{splitCueIndex === index && <div className="cue-split-picker" onClick={(event) => event.stopPropagation()}><small>Click the word where the new subtitle should begin.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} disabled={wordIndex === 0} onClick={() => splitCue(index, wordIndex)}>{word.text.trim()}</button>)}</div></div>}</div>{touchedPanels.has(index) && <div className={`cue-style-collapse ${expandedCue === index ? "expanded" : ""}`}><div className="cue-style-collapse-inner"><div className="cue-style-editor" onClick={(event) => event.stopPropagation()}><div className="cue-style-heading"><b>Line appearance</b>{cue.style_override && <button type="button" onClick={() => update(index, { style_override: null }, true)}>Use project style</button>}</div><TrackStyleControls style={cue.style_override ?? settings} name={`Subtitle ${index + 1}`} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style, immediate) => update(index, { style_override: style }, immediate)} /><div className="word-style-editor"><b>Word emphasis</b><small>Select a word, then apply formatting.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} className={`${selectedWord?.cueIndex === index && selectedWord.wordIndex === wordIndex ? "selected" : ""} ${word.style ? "customized" : ""}`} onClick={() => setSelectedWord({ cueIndex: index, wordIndex })}>{word.text.trim()}</button>)}</div>{selectedWord?.cueIndex === index && <div className="word-format-controls"><button type="button" aria-label="Bold selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { bold: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.bold }, true)}><b>B</b></button><button type="button" aria-label="Italicize selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { italic: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.italic }, true)}><i>I</i></button><button type="button" aria-label="Underline selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { underline: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.underline }, true)}><u>U</u></button><input aria-label="Selected word color" type="color" value={timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.text_color ?? (cue.style_override ?? settings).text_color} onChange={(event) => updateWordStyle(index, selectedWord.wordIndex, { text_color: event.target.value })} /><button type="button" className="clear-word-style" onClick={() => updateWordStyle(index, selectedWord.wordIndex, null, true)}>Clear</button></div>}</div></div></div></div>}</article>; })}</section></div>{fontLibraryOpen && <FontLibraryPanel fonts={userFonts.filter((font) => !font.archivedAt)} quota={fontQuota} getToken={token} onClose={() => setFontLibraryOpen(false)} onChanged={loadFontLibrary} />}</div></AppShell>;
+      {cues.map((cue, index) => { const stats = readabilityStats(cue); return <article id={`cue-row-${index}`} className={`cue-row ${activeCue?.cue_index === cue.cue_index ? "active" : ""} ${selectedCues.has(index) ? "selected" : ""} ${currentSearchMatchCueIndex === index ? "search-match" : ""}`} key={cue.id ?? index} onClick={() => { if (videoRef.current) videoRef.current.currentTime = cue.start_ms / 1000; }}><div className="cue-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select subtitle ${index + 1} for bulk timestamp shift`} checked={selectedCues.has(index)} onChange={() => toggleCueSelection(index)} /><span className="cue-number">{index + 1}</span></div><div className="time-fields"><input aria-label="Start time in milliseconds" type="number" min="0" value={cue.start_ms} onChange={(e) => update(index, { start_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><span>→</span><input aria-label="End time in milliseconds" type="number" min="1" value={cue.end_ms} onChange={(e) => update(index, { end_ms: Number(e.target.value) })} onBlur={doc.commitPending} /><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div><div className="cue-text-fields"><label><small>Original</small><textarea aria-label={`Original subtitle ${index + 1}`} value={cue.text} onChange={(e) => update(index, { text: e.target.value })} onBlur={doc.commitPending} /></label>{cue.translated_text != null && <label><small>{targetLanguage}</small><textarea aria-label={`${targetLanguage} subtitle ${index + 1}`} value={cue.translated_text} onChange={(e) => update(index, { translated_text: e.target.value })} onBlur={doc.commitPending} /></label>}{stats.issues.length > 0 && <div className="cue-readability" title={stats.issues.map((issue) => READABILITY_LABELS[issue]).join(" ")}>⚠ {[stats.issues.includes("cps-high") && `${stats.cps.toFixed(1)} CPS`, stats.issues.includes("wpm-high") && `${Math.round(stats.wpm)} WPM`, stats.issues.includes("duration-short") && "too brief", stats.issues.includes("duration-long") && "too long"].filter(Boolean).join(" · ")}</div>}<div className="cue-edit-actions"><button type="button" disabled={timedWordsForCue(cue).length < 2} onClick={(event) => { event.stopPropagation(); setSplitCueIndex((current) => current === index ? null : index); }}>{splitCueIndex === index ? "Cancel split" : "Split"}</button><button type="button" disabled={index === cues.length - 1} onClick={(event) => { event.stopPropagation(); mergeWithNext(index); }}>Merge ↓</button><button type="button" className={`cue-customize-toggle ${expandedCue === index ? "expanded" : ""} ${cue.style_override || cue.words?.some((word) => word.style) ? "customized" : ""}`} aria-expanded={expandedCue === index} onClick={(event) => { event.stopPropagation(); toggleCueCustomize(index); }}>Customize <span className="chevron">▼</span></button></div>{splitCueIndex === index && <div className="cue-split-picker" onClick={(event) => event.stopPropagation()}><small>Click the word where the new subtitle should begin.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} disabled={wordIndex === 0} onClick={() => splitCue(index, wordIndex)}>{word.text.trim()}</button>)}</div></div>}</div>{touchedPanels.has(index) && <div className={`cue-style-collapse ${expandedCue === index ? "expanded" : ""}`}><div className="cue-style-collapse-inner"><div className="cue-style-editor" onClick={(event) => event.stopPropagation()}><div className="cue-style-heading"><b>Line appearance</b>{cue.style_override && <button type="button" onClick={() => update(index, { style_override: null }, true)}>Use project style</button>}</div><TrackStyleControls style={cue.style_override ?? settings} name={`Subtitle ${index + 1}`} googleFonts={googleFonts} userFonts={userFonts} googleUnavailable={googleUnavailable} onManageFonts={() => setFontLibraryOpen(true)} onChange={(style, immediate) => update(index, { style_override: style }, immediate)} /><div className="word-style-editor"><b>Word emphasis</b><small>Select a word, then apply formatting.</small><div className="word-chips">{timedWordsForCue(cue).map((word, wordIndex) => <button type="button" key={`${word.start_ms}-${wordIndex}`} className={`${selectedWord?.cueIndex === index && selectedWord.wordIndex === wordIndex ? "selected" : ""} ${word.style ? "customized" : ""}`} onClick={() => setSelectedWord({ cueIndex: index, wordIndex })}>{word.text.trim()}</button>)}</div>{selectedWord?.cueIndex === index && <div className="word-format-controls"><button type="button" aria-label="Bold selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { bold: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.bold }, true)}><b>B</b></button><button type="button" aria-label="Italicize selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { italic: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.italic }, true)}><i>I</i></button><button type="button" aria-label="Underline selected word" onClick={() => updateWordStyle(index, selectedWord.wordIndex, { underline: !timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.underline }, true)}><u>U</u></button><input aria-label="Selected word color" type="color" value={timedWordsForCue(cue)[selectedWord.wordIndex]?.style?.text_color ?? (cue.style_override ?? settings).text_color} onChange={(event) => updateWordStyle(index, selectedWord.wordIndex, { text_color: event.target.value })} /><button type="button" className="clear-word-style" onClick={() => updateWordStyle(index, selectedWord.wordIndex, null, true)}>Clear</button></div>}</div></div></div></div>}</article>; })}</section></div>{fontLibraryOpen && <FontLibraryPanel fonts={userFonts.filter((font) => !font.archivedAt)} quota={fontQuota} getToken={token} onClose={() => setFontLibraryOpen(false)} onChanged={loadFontLibrary} />}{historyOpen && <VersionHistoryPanel videoId={videoId} getToken={token} saveCurrentChanges={save} onRestored={load} onClose={() => setHistoryOpen(false)} />}{shareOpen && <ShareLinkPanel videoId={videoId} getToken={token} onClose={() => setShareOpen(false)} />}</div></AppShell>;
 }

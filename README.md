@@ -31,6 +31,7 @@ supabase/migrations/004_add_user_fonts.sql
 supabase/migrations/005_add_karaoke_subtitles.sql
 supabase/migrations/006_add_advanced_subtitle_styles.sql
 supabase/migrations/007_add_error_logs.sql
+supabase/migrations/009_add_collaboration.sql
 ```
 
 See `MIGRATIONS.md` for the validation checklist to follow whenever a new migration is added.
@@ -66,6 +67,12 @@ Google and uploaded font choices affect the editor preview and saved project set
 Karaoke highlighting uses Soniox word-level timestamps for newly processed videos. Existing or manually edited cues fall back to evenly distributed word timing within each cue. The effect is saved with the project and shown in the editor preview; text-only subtitle exports do not preserve the highlight color.
 
 Advanced styling supports customizable text glow, full appearance overrides for individual subtitle cues, and bold, italic, underline, or color emphasis for individual words. These visual effects are saved with the project and shown in the editor preview, but text-only SRT, VTT, and TXT exports do not preserve them.
+
+### Version history and sharing
+
+The editor's **History** panel saves named snapshots of a project's subtitles and restores them later. Restoring snapshots the current state first, so restoring the wrong version can itself be undone. Each project keeps its 20 most recent snapshots.
+
+The **Share** panel creates read-only links (`/share/<token>`) that show the video, styled captions, and cue list to anyone with the URL — no account needed, and no way to edit or export. Links can expire after 7 or 30 days or stay open until revoked, and only the project owner can create or revoke them. The link is displayed once when created: only a hash of the token is stored, so a lost link must be revoked and replaced rather than looked up.
 
 ### 4. Configure authentication providers
 
