@@ -82,6 +82,7 @@ export function SharedProjectView({ project }: { project: SharedProject }) {
             <div className="cue-select"><span className="cue-number">{index + 1}</span></div>
             <div className="time-fields"><small>{formatTimestamp(cue.start_ms, ".")} — {formatTimestamp(cue.end_ms, ".")}</small></div>
             <div className="cue-text-fields">
+              {project.settings.speaker_labels_enabled && cue.speaker?.trim() && <span className="cue-speaker-tag">{cue.speaker.trim()}</span>}
               <p>{cue.text}</p>
               {cue.translated_text && <p className="shared-translated-text">{cue.translated_text}</p>}
             </div>

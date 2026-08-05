@@ -9,6 +9,8 @@ export type SubtitleCue = {
   translated_text?: string | null;
   words?: SubtitleWord[] | null;
   style_override?: SubtitleTrackStyle | null;
+  /** Who says this line. Null/absent means unattributed — the state of every cue until someone labels it. */
+  speaker?: string | null;
 };
 
 export type SubtitleWordStyle = {
@@ -86,10 +88,34 @@ export type SubtitleTrackStyle = {
   glow_intensity: number;
 };
 
+export const SPEAKER_LABEL_STYLES = [
+  { value: "colon", label: "Maria:" },
+  { value: "chevron", label: ">> Maria:" },
+  { value: "brackets", label: "[Maria]" },
+] as const;
+
+export type SpeakerLabelStyle = (typeof SPEAKER_LABEL_STYLES)[number]["value"];
+
+export function isSpeakerLabelStyle(value: unknown): value is SpeakerLabelStyle {
+  return typeof value === "string" && SPEAKER_LABEL_STYLES.some((style) => style.value === value);
+}
+
+/** The visible form of a speaker label, without the trailing space that separates it from dialogue. */
+export function formatSpeakerLabel(speaker: string, style: SpeakerLabelStyle) {
+  const name = speaker.trim();
+  if (!name) return "";
+  return style === "brackets" ? `[${name}]` : style === "chevron" ? `>> ${name}:` : `${name}:`;
+}
+
 export type SubtitleSettings = SubtitleTrackStyle & {
   words_per_cue: number;
   karaoke_enabled: boolean;
   karaoke_color: string;
+  speaker_labels_enabled: boolean;
+  speaker_label_style: SpeakerLabelStyle;
+  speaker_label_color: string;
+  sound_markers_enabled: boolean;
+  sound_marker_color: string;
 };
 
 export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
@@ -111,6 +137,11 @@ export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
   words_per_cue: 8,
   karaoke_enabled: false,
   karaoke_color: "#A78BFA",
+  speaker_labels_enabled: false,
+  speaker_label_style: "colon",
+  speaker_label_color: "#FFD479",
+  sound_markers_enabled: true,
+  sound_marker_color: "#9CE0C4",
 };
 
 export const DEFAULT_TRANSLATION_STYLE: SubtitleTrackStyle = {
@@ -179,6 +210,11 @@ export function settingsFromVideoRow(row: Record<string, unknown>): SubtitleSett
     words_per_cue: typeof wordsPerCue === "number" && wordsPerCue >= 2 && wordsPerCue <= 16 ? wordsPerCue : DEFAULT_SUBTITLE_SETTINGS.words_per_cue,
     karaoke_enabled: typeof row.karaoke_enabled === "boolean" ? row.karaoke_enabled : DEFAULT_SUBTITLE_SETTINGS.karaoke_enabled,
     karaoke_color: isHexColor(row.karaoke_color) ? row.karaoke_color : DEFAULT_SUBTITLE_SETTINGS.karaoke_color,
+    speaker_labels_enabled: typeof row.speaker_labels_enabled === "boolean" ? row.speaker_labels_enabled : DEFAULT_SUBTITLE_SETTINGS.speaker_labels_enabled,
+    speaker_label_style: isSpeakerLabelStyle(row.speaker_label_style) ? row.speaker_label_style : DEFAULT_SUBTITLE_SETTINGS.speaker_label_style,
+    speaker_label_color: isHexColor(row.speaker_label_color) ? row.speaker_label_color : DEFAULT_SUBTITLE_SETTINGS.speaker_label_color,
+    sound_markers_enabled: typeof row.sound_markers_enabled === "boolean" ? row.sound_markers_enabled : DEFAULT_SUBTITLE_SETTINGS.sound_markers_enabled,
+    sound_marker_color: isHexColor(row.sound_marker_color) ? row.sound_marker_color : DEFAULT_SUBTITLE_SETTINGS.sound_marker_color,
   };
 }
 
@@ -251,6 +287,58 @@ export function timedWordsForCue(cue: SubtitleCue): SubtitleWord[] {
   }));
 }
 
+/**
+ * Non-speech accessibility markers — `[door slams]`, `(laughter)`, `♪ lyrics ♪`, a bare `♪`.
+ * These are recognized inside a cue's own text rather than stored in a column, so markers survive
+ * import, export, search/replace, and split/merge for free, and a file transcribed elsewhere gets
+ * marker styling with no data migration. Paired `♪ … ♪` is matched before a lone `♪`.
+ */
+const ACCESSIBILITY_MARKER = /\[[^\]]*\]|\([^)]*\)|♪[^♪]*♪|♪/g;
+
+export type MarkedWord = SubtitleWord & { marker: boolean };
+
+/** Character ranges within `text` occupied by accessibility markers, in order. */
+export function accessibilityMarkerRanges(text: string): [number, number][] {
+  return [...text.matchAll(ACCESSIBILITY_MARKER)].map((match) => [match.index, match.index + match[0].length]);
+}
+
+export function hasAccessibilityMarker(text: string) {
+  return accessibilityMarkerRanges(text).length > 0;
+}
+
+/** Splits a caption line into alternating dialogue and marker runs for rendering. */
+export function splitCaptionSegments(text: string): { text: string; marker: boolean }[] {
+  const segments: { text: string; marker: boolean }[] = [];
+  let cursor = 0;
+  for (const [from, to] of accessibilityMarkerRanges(text)) {
+    if (from > cursor) segments.push({ text: text.slice(cursor, from), marker: false });
+    segments.push({ text: text.slice(from, to), marker: true });
+    cursor = to;
+  }
+  if (cursor < text.length) segments.push({ text: text.slice(cursor), marker: false });
+  return segments;
+}
+
+/**
+ * `timedWordsForCue` plus a per-word flag for whether the word falls inside a marker. Words are
+ * re-anchored against the cue text by search rather than by running offset, so the karaoke path
+ * and the marker path agree even when word tokens were produced by the whitespace fallback.
+ */
+export function markedWordsForCue(cue: SubtitleCue): MarkedWord[] {
+  const words = timedWordsForCue(cue);
+  const ranges = accessibilityMarkerRanges(cue.text);
+  if (!ranges.length) return words.map((word) => ({ ...word, marker: false }));
+  let cursor = 0;
+  return words.map((word) => {
+    const token = word.text.trim();
+    const found = token ? cue.text.indexOf(token, cursor) : -1;
+    const from = found === -1 ? cursor : found;
+    const to = from + token.length;
+    cursor = to;
+    return { ...word, marker: ranges.some(([start, end]) => from < end && to > start) };
+  });
+}
+
 export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {
   const wordLimit = Math.max(2, Math.min(16, Math.round(maximumWords)));
   if (cues.some((cue) => cue.translated_text)) {
@@ -276,12 +364,15 @@ export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {
           text: originalWords.slice(originalStart, originalEnd).join(" "),
           translated_text: translatedWords.slice(translatedStart, translatedEnd).join(" ") || null,
           words,
+          speaker: cue.speaker ?? null,
         });
       }
     }
     return bilingual;
   }
-  const words = cues.flatMap(timedWordsForCue);
+  // Each word carries its source cue's speaker so regrouping can break on a speaker change —
+  // otherwise "Apply word limit" would merge two people into one cue and drop one of the labels.
+  const words = cues.flatMap((cue) => timedWordsForCue(cue).map((word) => ({ ...word, speaker: cue.speaker?.trim() || null })));
 
   const result: SubtitleCue[] = [];
   let group: typeof words = [];
@@ -292,13 +383,14 @@ export function resegmentCues(cues: SubtitleCue[], maximumWords: number) {
       start_ms: group[0].start_ms,
       end_ms: Math.max(group[0].start_ms + 1, group.at(-1)!.end_ms),
       text: group.map((word) => word.text).join("").trim(),
-      words: group,
+      words: group.map((word) => ({ text: word.text, start_ms: word.start_ms, end_ms: word.end_ms, ...(word.style ? { style: word.style } : {}) })),
+      speaker: group[0].speaker,
     });
     group = [];
   };
 
   for (const word of words) {
-    if (group.length && (group.length >= wordLimit || word.start_ms - group.at(-1)!.end_ms > 1_000)) flush();
+    if (group.length && (group.length >= wordLimit || word.start_ms - group.at(-1)!.end_ms > 1_000 || word.speaker !== group.at(-1)!.speaker)) flush();
     group.push(word);
   }
   flush();
@@ -387,17 +479,35 @@ function cueText(cue: SubtitleCue, mode: SubtitleExportMode = "original") {
   return mode === "bilingual" ? `${cue.text.trim()}\n${cue.translated_text.trim()}` : cue.translated_text.trim();
 }
 
-export function toSrt(cues: SubtitleCue[], mode: SubtitleExportMode = "original") {
-  return cues.map((cue, index) => `${index + 1}\n${formatTimestamp(cue.start_ms)} --> ${formatTimestamp(cue.end_ms)}\n${cueText(cue, mode)}`).join("\n\n") + "\n";
+/**
+ * Speaker prefixes are opt-in on every format: passing no style leaves exports byte-identical to
+ * what they were before speaker labels existed, so turning the feature on in the editor is what
+ * changes a download's shape — never an upgrade.
+ */
+function speakerPrefixed(cue: SubtitleCue, mode: SubtitleExportMode, style?: SpeakerLabelStyle | null) {
+  const label = style && cue.speaker?.trim() ? formatSpeakerLabel(cue.speaker, style) : "";
+  return label ? `${label} ${cueText(cue, mode)}` : cueText(cue, mode);
 }
 
-export function toVtt(cues: SubtitleCue[], mode: SubtitleExportMode = "original") {
-  const body = cues.map((cue) => `${formatTimestamp(cue.start_ms, ".")} --> ${formatTimestamp(cue.end_ms, ".")}\n${cueText(cue, mode)}`).join("\n\n");
+export function toSrt(cues: SubtitleCue[], mode: SubtitleExportMode = "original", speakerStyle?: SpeakerLabelStyle | null) {
+  return cues.map((cue, index) => `${index + 1}\n${formatTimestamp(cue.start_ms)} --> ${formatTimestamp(cue.end_ms)}\n${speakerPrefixed(cue, mode, speakerStyle)}`).join("\n\n") + "\n";
+}
+
+/**
+ * VTT gets the speaker as a native `<v Maria>` voice span rather than a text prefix: players
+ * style it themselves, and it is the one form this project's own import parser can read back.
+ */
+export function toVtt(cues: SubtitleCue[], mode: SubtitleExportMode = "original", speakerStyle?: SpeakerLabelStyle | null) {
+  const body = cues.map((cue) => {
+    const speaker = speakerStyle && cue.speaker?.trim() ? cue.speaker.trim().replace(/[<>\n]/g, " ") : "";
+    const text = cueText(cue, mode);
+    return `${formatTimestamp(cue.start_ms, ".")} --> ${formatTimestamp(cue.end_ms, ".")}\n${speaker ? `<v ${speaker}>${text}</v>` : text}`;
+  }).join("\n\n");
   return `WEBVTT\n\n${body}\n`;
 }
 
-export function toTxt(cues: SubtitleCue[], mode: SubtitleExportMode = "original") {
-  return cues.map((cue) => cueText(cue, mode)).join("\n") + "\n";
+export function toTxt(cues: SubtitleCue[], mode: SubtitleExportMode = "original", speakerStyle?: SpeakerLabelStyle | null) {
+  return cues.map((cue) => speakerPrefixed(cue, mode, speakerStyle)).join("\n") + "\n";
 }
 
 export type ParsedSubtitleFile = {
@@ -406,6 +516,11 @@ export type ParsedSubtitleFile = {
 };
 
 const IMPORT_TIMESTAMP = /(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})/;
+
+// WebVTT voice span, optionally carrying classes (`<v.loud Maria>`). This is the only speaker
+// notation read on import: a textual `Maria:` prefix is indistinguishable from dialogue such as
+// "Note: bring it tomorrow", so guessing there would corrupt more files than it would label.
+const IMPORT_VOICE_SPAN = /<v(?:\.[^\s>]+)*\s+([^>]+)>/i;
 
 function importTimestampToMs(hours: string, minutes: string, seconds: string, milliseconds: string) {
   return (Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)) * 1000 + Number(milliseconds.padEnd(3, "0").slice(0, 3));
@@ -426,9 +541,11 @@ export function parseSubtitleFile(content: string): ParsedSubtitleFile {
     const start_ms = importTimestampToMs(match[1], match[2], match[3], match[4]);
     const end_ms = importTimestampToMs(match[5], match[6], match[7], match[8]);
     if (!(end_ms > start_ms)) { skipped.push(`Block ${blockNumber + 1}: end time is not after start time.`); return; }
-    const text = lines.slice(timestampLineIndex + 1).join(" ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const body = lines.slice(timestampLineIndex + 1).join(" ");
+    const speaker = body.match(IMPORT_VOICE_SPAN)?.[1].trim().slice(0, 60);
+    const text = body.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
     if (!text) { skipped.push(`Block ${blockNumber + 1}: subtitle text is empty.`); return; }
-    cues.push({ cue_index: 0, start_ms, end_ms, text });
+    cues.push({ cue_index: 0, start_ms, end_ms, text, ...(speaker ? { speaker } : {}) });
   });
   cues.sort((a, b) => a.start_ms - b.start_ms);
   cues.forEach((cue, index) => { cue.cue_index = index; });

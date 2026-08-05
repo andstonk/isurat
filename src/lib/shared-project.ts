@@ -39,12 +39,12 @@ export async function loadSharedProject(token: string): Promise<SharedProjectRes
   if (state !== "active") return { status: state };
 
   const { data: video } = await db.from("videos")
-    .select("id, file_name, blob_name, language, duration_ms, translation_target_language, translation_status, subtitle_font_family, subtitle_font_source, subtitle_user_font_id, subtitle_text_color, subtitle_font_size, subtitle_bold, subtitle_italic, subtitle_underline, subtitle_strikethrough, subtitle_backdrop_color, subtitle_backdrop_opacity, subtitle_glow_enabled, subtitle_glow_color, subtitle_glow_blur, subtitle_glow_intensity, translation_font_family, translation_font_source, translation_user_font_id, translation_text_color, translation_font_size, translation_bold, translation_italic, translation_underline, translation_strikethrough, translation_backdrop_color, translation_backdrop_opacity, translation_glow_enabled, translation_glow_color, translation_glow_blur, translation_glow_intensity, words_per_cue, karaoke_enabled, karaoke_color")
+    .select("id, file_name, blob_name, language, duration_ms, translation_target_language, translation_status, subtitle_font_family, subtitle_font_source, subtitle_user_font_id, subtitle_text_color, subtitle_font_size, subtitle_bold, subtitle_italic, subtitle_underline, subtitle_strikethrough, subtitle_backdrop_color, subtitle_backdrop_opacity, subtitle_glow_enabled, subtitle_glow_color, subtitle_glow_blur, subtitle_glow_intensity, translation_font_family, translation_font_source, translation_user_font_id, translation_text_color, translation_font_size, translation_bold, translation_italic, translation_underline, translation_strikethrough, translation_backdrop_color, translation_backdrop_opacity, translation_glow_enabled, translation_glow_color, translation_glow_blur, translation_glow_intensity, words_per_cue, karaoke_enabled, karaoke_color, speaker_labels_enabled, speaker_label_style, speaker_label_color, sound_markers_enabled, sound_marker_color")
     .eq("id", link.video_id).maybeSingle();
   if (!video) return { status: "not-found" };
 
   const { data: cues } = await db.from("subtitle_cues")
-    .select("cue_index, start_ms, end_ms, text, translated_text, words, style_override")
+    .select("cue_index, start_ms, end_ms, text, translated_text, words, style_override, speaker")
     .eq("video_id", link.video_id).order("cue_index");
 
   const playbackUrl = await getVideoContainer().getBlockBlobClient(video.blob_name).generateSasUrl({

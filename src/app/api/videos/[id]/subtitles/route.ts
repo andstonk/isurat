@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/api-auth";
 import { isGoogleFontFamily } from "@/lib/google-fonts";
 import { createAdminSupabase } from "@/lib/supabase";
-import { hasValidWordTimings, isSubtitleTrackStyle, timedWordsForCue, type SubtitleCue, type SubtitleSettings, type SubtitleTrackStyle } from "@/lib/subtitles";
+import { hasValidWordTimings, isSpeakerLabelStyle, isSubtitleTrackStyle, timedWordsForCue, type SubtitleCue, type SubtitleSettings, type SubtitleTrackStyle } from "@/lib/subtitles";
 import { logError } from "@/lib/error-log";
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -14,15 +14,22 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     settings?: SubtitleSettings;
     translationStyle?: SubtitleTrackStyle;
   };
+  // `speaker` is tolerant of an empty string rather than rejecting it: clearing the editor's
+  // speaker field naturally produces one, and it is normalized to null on write below.
   if (!cues?.length || cues.some((cue, index) => cue.cue_index !== index || cue.start_ms < 0 || cue.end_ms <= cue.start_ms
     || !cue.text.trim() || (cue.translated_text != null && !cue.translated_text.trim()) || (cue.words != null && !hasValidWordTimings(cue.words))
+    || (cue.speaker != null && (typeof cue.speaker !== "string" || cue.speaker.trim().length > 60))
     || (cue.style_override != null && !isSubtitleTrackStyle(cue.style_override)))) {
     return NextResponse.json({ error: "Subtitle cues are invalid." }, { status: 400 });
   }
   if (settings && (!isSubtitleTrackStyle(settings)
     || !Number.isInteger(settings.words_per_cue) || settings.words_per_cue < 2 || settings.words_per_cue > 16
     || typeof settings.karaoke_enabled !== "boolean" || typeof settings.karaoke_color !== "string"
-    || !/^#[0-9a-f]{6}$/i.test(settings.karaoke_color))) {
+    || !/^#[0-9a-f]{6}$/i.test(settings.karaoke_color)
+    || typeof settings.speaker_labels_enabled !== "boolean" || !isSpeakerLabelStyle(settings.speaker_label_style)
+    || typeof settings.speaker_label_color !== "string" || !/^#[0-9a-f]{6}$/i.test(settings.speaker_label_color)
+    || typeof settings.sound_markers_enabled !== "boolean"
+    || typeof settings.sound_marker_color !== "string" || !/^#[0-9a-f]{6}$/i.test(settings.sound_marker_color))) {
     return NextResponse.json({ error: "Subtitle appearance settings are invalid." }, { status: 400 });
   }
   if (translationStyle && !isSubtitleTrackStyle(translationStyle)) {
@@ -60,6 +67,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     translated_text: cue.translated_text?.trim() || null,
     words: timedWordsForCue(cue),
     style_override: cue.style_override ?? null,
+    speaker: cue.speaker?.trim() || null,
   })));
   if (error) {
     await logError(db, { route: "PUT /api/videos/[id]/subtitles", userId: user.id, videoId: id, error });
@@ -86,6 +94,11 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       words_per_cue: settings.words_per_cue,
       karaoke_enabled: settings.karaoke_enabled,
       karaoke_color: settings.karaoke_color,
+      speaker_labels_enabled: settings.speaker_labels_enabled,
+      speaker_label_style: settings.speaker_label_style,
+      speaker_label_color: settings.speaker_label_color,
+      sound_markers_enabled: settings.sound_markers_enabled,
+      sound_marker_color: settings.sound_marker_color,
     } : {}),
     ...(translationStyle ? {
       translation_font_family: translationStyle.font_family,

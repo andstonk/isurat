@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
       status: "ready",
       transcript: cues.map((cue) => cue.text).join(" "),
       language: detectTranscriptLanguage(result.tokens),
+      // Every attributed cue carries a label, but only a project with two or more speakers turns
+      // the display on by itself — burning "Speaker 1:" over every caption of a one-person video
+      // tells the viewer nothing. The labels are still there to edit either way.
+      ...(new Set(cues.map((cue) => cue.speaker).filter(Boolean)).size > 1 ? { speaker_labels_enabled: true } : {}),
       translation_status: video.translation_target_language && bilingualCues.length ? "ready" : "none",
       duration_ms: completed.audio_duration_ms ?? cues.at(-1)?.end_ms,
       updated_at: new Date().toISOString(),

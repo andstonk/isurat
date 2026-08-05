@@ -17,6 +17,7 @@ export const PROJECT_SETTINGS_COLUMNS = [
   "subtitle_font_size", "subtitle_bold", "subtitle_italic", "subtitle_underline", "subtitle_strikethrough",
   "subtitle_backdrop_color", "subtitle_backdrop_opacity", "subtitle_glow_enabled", "subtitle_glow_color",
   "subtitle_glow_blur", "subtitle_glow_intensity", "words_per_cue", "karaoke_enabled", "karaoke_color",
+  "speaker_labels_enabled", "speaker_label_style", "speaker_label_color", "sound_markers_enabled", "sound_marker_color",
 ] as const;
 
 export const TRANSLATION_STYLE_COLUMNS = [
@@ -26,7 +27,7 @@ export const TRANSLATION_STYLE_COLUMNS = [
   "translation_glow_blur", "translation_glow_intensity",
 ] as const;
 
-export const SNAPSHOT_CUE_COLUMNS = "cue_index, start_ms, end_ms, text, translated_text, words, style_override";
+export const SNAPSHOT_CUE_COLUMNS = "cue_index, start_ms, end_ms, text, translated_text, words, style_override, speaker";
 
 function pickColumns(row: Record<string, unknown>, columns: readonly string[]) {
   return Object.fromEntries(columns.filter((column) => column in row).map((column) => [column, row[column]]));
@@ -118,6 +119,8 @@ export function isRestorableCue(value: unknown): value is SubtitleCue {
     && typeof cue.text === "string" && cue.text.trim().length > 0
     && (cue.translated_text == null || typeof cue.translated_text === "string")
     && (cue.words == null || hasValidWordTimings(cue.words))
+    // Snapshots taken before speaker labels existed have no `speaker` key at all — that must stay restorable.
+    && (cue.speaker == null || typeof cue.speaker === "string" && cue.speaker.trim().length <= 60)
     && (cue.style_override == null || isSubtitleTrackStyle(cue.style_override));
 }
 

@@ -1,6 +1,6 @@
 # Video Subtitle Generator Roadmap
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 Planning horizon: 16 weeks (Aug-Nov 2026)
 
 ## Scope and Assumptions
@@ -76,6 +76,7 @@ Exit criteria:
 
 Known import limitations (by design, not defects — record them so they aren't refiled as bugs):
 - A multi-line cue in a source file collapses to one line on import (`line one\nline two` becomes `line one line two`). Line breaks inside a cue are not preserved; everything after the first round-trip is stable because the text is already single-line.
+- **A speaker label survives a VTT round-trip but not an SRT one.** VTT exports it as `<v Maria>`, which the parser reads back into `cue.speaker`. SRT and TXT write a textual `Maria:` prefix, and the parser deliberately does not guess at those — `Note: bring it tomorrow` is indistinguishable from a speaker prefix, so guessing would corrupt more files than it would label. Re-importing an SRT leaves the prefix as part of the cue text.
 - **Bilingual exports cannot be re-imported losslessly.** A bilingual SRT/VTT puts original and translation on two lines of one cue, so re-importing merges them into a single `text` field (`"Hello there. Kumusta."`) with `translated_text` empty. Import is single-track by design; re-import bilingual files only if you intend that merge.
 
 ## Phase 3 (Weeks 8-10): Collaboration and Workflow ✅ Deliverables done
@@ -106,12 +107,15 @@ Deliverables:
 - [ ] Position/alignment controls with safe-title guides
 - [ ] Customizable text glow controls (enabled, color, blur radius, and intensity)
 - [ ] Preview/render parity for project, cue, and word-level style overrides
-- [ ] Optional speaker labels and accessibility markers — rendering only; detecting *who* is speaking is its own workstream, see "Speaker Diarization" below
+- [x] Optional speaker labels and accessibility markers — rendering only; detecting *who* is speaking is its own workstream, see "Speaker Diarization" below. Migration `011` adds `subtitle_cues.speaker` plus five project render settings. Labels are off by default and typed by hand; markers (`[door slams]`, `(laughter)`, `♪ … ♪`) are **on** by default and need no data at all — they are recognized inside the cue's own text at render time, so an SRT imported from another tool gets marker styling immediately. Both render in the editor preview and the share view; SRT/TXT exports prefix the label in the chosen format and VTT emits a standard `<v Maria>` voice tag. Turning labels off leaves every export byte-identical to what it was before this landed. Known false positive: an ordinary parenthetical aside in dialogue ("I went to the store (I think)") is tinted as if it were a sound effect, because `(laughs)` and `(I think)` are not distinguishable by pattern. Brackets and `♪` have no such ambiguity. The per-project toggle is the escape hatch; narrowing the pattern to brackets only would lose real markers in files imported from tools that use parentheses.
 
 Exit criteria:
 - [ ] Burn-in export works for target max file size and duration
 - [ ] Presets are reusable across projects
 - [ ] Glow and formatting effects match between editor preview and rendered video output
+- [x] Speaker labels and markers render identically in the editor preview and the read-only share view — both call the same `CaptionOverlay`. Burn-in parity is not claimed and cannot be until the render pipeline exists
+
+Verification status (speaker labels / markers): lint and build pass, and the pure logic was checked against 43 cases — marker detection (brackets, parentheses, paired and lone `♪`, unclosed brackets, repeated tokens), per-word marker flags on both the stored-timing and fallback paths, label formatting, export shape for all three formats and all three modes, VTT voice-tag round-trip through the importer, speaker preservation through `resegmentCues`, settings normalization against missing and garbage columns, and the editor's marker-insert transform (which must keep `words` concatenating to `text` or karaoke silently loses its real timings). Nothing here has run against a live Supabase: that needs migration `011` applied and the "Phase 4 manual check" pass in `RUNBOOK.md`.
 
 ## Phase 5 (Weeks 14-16): Growth, Analytics, and Hardening
 
@@ -133,14 +137,18 @@ Exit criteria:
 
 Goal: when two or more people speak, tell them apart — label each subtitle with who said it, and let the creator rename those speakers to real names.
 
-This is listed separately rather than folded into a phase because it cuts across the whole pipeline: transcription, data model, editor, and export. Phase 4's "speaker labels" line is only the rendering half and depends on this landing first.
+This is listed separately rather than folded into a phase because it cuts across the whole pipeline: transcription, data model, editor, and export.
+
+**Mostly done as of 2026-08-05.** Soniox turned out to support diarization behind a request flag at no extra cost (see "Settled questions" below), so this landed immediately after Phase 4's rendering half rather than remaining unscheduled. Storage, detection, cue splitting, display, editing, and export all work end to end. What remains is per-word attribution, project-wide speaker rename, and per-speaker style overrides.
+
+**Not yet verified against real audio.** The token→cue logic is checked against 16 constructed cases, but no two-person video has been transcribed through the live Soniox API with the flag on. Until that happens, treat "diarization works" as *implemented*, not *proven* — see the Phase 4 manual check in `RUNBOOK.md`.
 
 Deliverables:
-- [ ] Request speaker tags from Soniox and carry the per-token speaker through `tokensToSubtitleCues` / `tokensToBilingualCues` (`src/lib/soniox.ts`) — the transcription request currently sets `enable_language_identification` but asks for no diarization
-- [ ] Persist a speaker per cue, and per word since tokens carry it (migration; `subtitle_cues.words` already stores per-word jsonb, so word-level may need no new column)
-- [ ] Break cues at speaker changes so one cue never mixes two people, and keep that boundary through split/merge and "Apply word limit"
-- [ ] Editor: show the speaker on each cue row, rename a speaker project-wide ("Speaker 1" → "Maria"), and reassign a cue the model tagged wrong
-- [ ] Optional speaker prefix in SRT/VTT/TXT exports (`Maria: …`), off by default so existing exports don't change shape
+- [x] Request speaker tags from Soniox and carry the per-token speaker through `tokensToSubtitleCues` / `tokensToBilingualCues` (`src/lib/soniox.ts`) — the request now sets `enable_speaker_diarization: true`, tokens carry a `speaker` field, and each cue is labelled from its own first token
+- [x] Persist a speaker per cue — `subtitle_cues.speaker` (migration `011`). Per-word attribution is still open, but `subtitle_cues.words` is jsonb and already carries per-word style, so it needs no new column either
+- [x] Break cues at speaker changes so one cue never mixes two people, and keep that boundary through split/merge and "Apply word limit" — `resegmentCues` breaks a group when the speaker changes; split copies the speaker to both halves and merge keeps the first cue's
+- [ ] Editor: show the speaker on each cue row *(done — a Speaker field per cue, shown when labels are on)*, rename a speaker project-wide ("Speaker 1" → "Maria") *(not started; only worth building once a model is generating the names)*, and reassign a cue the model tagged wrong *(done — the field is free text)*
+- [x] Optional speaker prefix in SRT/VTT/TXT exports (`Maria: …`), off by default so existing exports don't change shape — SRT/TXT take a text prefix in one of three formats; VTT emits `<v Maria>`, which is also the only form the importer reads back
 - [ ] Per-speaker style overrides — reuses the existing cue-level style cascade rather than adding a fourth level
 
 Exit criteria:
@@ -148,10 +156,15 @@ Exit criteria:
 - [ ] A mis-tagged cue can be reassigned in the editor without touching the database
 - [ ] Renaming a speaker updates every cue attributed to them
 
-Open questions to settle before scoping this:
-- **Does the configured Soniox model actually return speaker tags, and does it cost extra?** `stt-async-v5` is what `SONIOX_TRANSCRIPTION_MODEL` defaults to. Verify against Soniox's current docs before estimating — this whole workstream is small if diarization is a request flag and large if it needs a separate model.
+Settled questions (checked 2026-08-05 against Soniox's live docs, not from memory):
+- **Does the configured model return speaker tags, and does it cost extra?** ~~Open~~ — **yes, and no.** `enable_speaker_diarization: true` is a request flag on the same `stt-async-v5` the app already uses; tokens come back with a `speaker` field holding a bare number as a string (`"1"`). Soniox bundles diarization, language identification, and smart formatting into the $0.10/hour async rate rather than billing them as add-ons, so it is on unconditionally rather than gated behind a setting. Up to 15 speakers per session, and async is the mode Soniox documents as most accurate for it. This is what collapsed the estimate from 1–1.5 weeks to a few days.
 - Diarization is unreliable on overlapping speech and similar voices. Manual reassignment in the editor is a deliverable above, not a nice-to-have, because the model will get some cues wrong.
-- Translated projects take a different token path (`tokensToBilingualCues`), so speaker attribution has to be threaded through both or explicitly scoped to original-only at first.
+- Translated projects take a different token path (`tokensToBilingualCues`), so speaker attribution has to be threaded through both or explicitly scoped to original-only at first. **Resolved by threading both, with a deliberate asymmetry:** the original track re-splits cues on a speaker change, the bilingual track only labels them. Splitting the bilingual path would drop original tokens that have no translation accumulated yet — losing subtitle text to gain a label is the wrong trade.
+
+Behaviour worth knowing:
+- **Every cue Soniox attributes arrives pre-filled**, single-speaker recordings included. The model's guess is always written to `subtitle_cues.speaker` so correcting it is a rename rather than typing a name from scratch on every cue. A cue is left null only when Soniox returned no speaker for it.
+- **Storing a label and showing one are separate.** `speaker_labels_enabled` switches itself on only for a transcript with two or more distinct speakers, so a two-person video shows its labels without the user hunting for a setting, while a one-person video is not made to burn "Speaker 1:" over every caption. The labels are there to edit either way, and the toggle is an ordinary setting.
+- Labels arrive as `Speaker 1` / `Speaker 2`. The editor's speaker field is free text, so renaming one on a cue is a normal edit — but there is still no project-wide rename, which is the one piece of this workstream that has not been built.
 
 ## Monetization: Payment Tiers (Out of Phase Order, Currently Blocked)
 
@@ -250,7 +263,8 @@ Word overrides take precedence over cue overrides, and cue overrides take preced
 - Burn-in rendering pipeline: 2.5 to 4 weeks
 - Analytics and hardening: 2 to 3 weeks
 - Payment tiers and billing: built (~1 week of work, parked); budget 3 to 5 days to re-point it at a new provider, plus provider onboarding/verification lead time
-- Speaker diarization: 1 to 1.5 weeks if Soniox returns speaker tags from a request flag; significantly more if it needs a second provider or model — estimate is not firm until that is verified
+- Speaker labels and accessibility markers (rendering only): built, ~1 day
+- Speaker diarization: now 3 to 5 days if Soniox returns speaker tags from a request flag, down from 1 to 1.5 weeks — storage, rendering, editing, and export all landed with Phase 4's rendering half, leaving detection and project-wide rename. Significantly more if it needs a second provider or model — estimate is not firm until that is verified
 
 ## Optional Faster Plan (Lean 8 Weeks)
 

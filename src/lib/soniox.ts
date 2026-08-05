@@ -9,6 +9,8 @@ export type SonioxToken = {
   source_language?: string | null;
   translation_status?: "none" | "original" | "translation";
   is_audio_event?: boolean | null;
+  /** Bare speaker number ("1", "2") when diarization is on. Absent on translation tokens. */
+  speaker?: string | null;
 };
 
 type SonioxFile = { id: string };
@@ -59,6 +61,9 @@ export async function createSonioxTranscription(fileId: string, clientReferenceI
       model: process.env.SONIOX_TRANSCRIPTION_MODEL ?? "stt-async-v5",
       file_id: fileId,
       enable_language_identification: true,
+      // Bundled into Soniox's hourly rate rather than billed as an add-on, and async transcription
+      // is the mode they document as most accurate for it, so there is no reason to make it opt-in.
+      enable_speaker_diarization: true,
       ...(targetLanguage ? { translation: { type: "one_way", target_language: targetLanguage } } : {}),
       client_reference_id: clientReferenceId,
     }),
@@ -88,10 +93,24 @@ export async function deleteSonioxFile(id: string) {
   await sonioxFetch<void>(`/files/${id}`, { method: "DELETE" });
 }
 
+/**
+ * Soniox returns a bare speaker number ("1", "2"), which becomes a "Speaker 1" style label.
+ *
+ * Every cue the model attributes gets one, including on single-speaker recordings: the point is
+ * that the field arrives pre-filled, so correcting it is a rename rather than typing a name from
+ * scratch on every cue. Whether those labels are *displayed* is a separate project setting.
+ * A cue is left unattributed only when Soniox itself returned no speaker for it.
+ */
+function speakerLabel(token: SonioxToken) {
+  const speaker = token.speaker?.toString().trim();
+  if (!speaker) return null;
+  return /^\d+$/.test(speaker) ? `Speaker ${speaker}` : speaker.slice(0, 60);
+}
+
 export function tokensToSubtitleCues(tokens: SonioxToken[]) {
   const spoken = tokens.filter((token) => !token.is_audio_event && token.translation_status !== "translation"
     && token.text.trim() && typeof token.start_ms === "number" && typeof token.end_ms === "number" && token.end_ms > token.start_ms);
-  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; words: Array<{ text: string; start_ms: number; end_ms: number }> }> = [];
+  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; speaker: string | null; words: Array<{ text: string; start_ms: number; end_ms: number }> }> = [];
   let group: SonioxToken[] = [];
 
   const flush = () => {
@@ -101,12 +120,16 @@ export function tokensToSubtitleCues(tokens: SonioxToken[]) {
       start_ms: group[0].start_ms!,
       end_ms: Math.max(group[0].start_ms! + 1, group.at(-1)!.end_ms!),
       text: group.map((token) => token.text).join("").trim(),
+      speaker: speakerLabel(group[0]),
       words: group.map((token) => ({ text: token.text, start_ms: token.start_ms!, end_ms: token.end_ms! })),
     });
     group = [];
   };
 
   for (const token of spoken) {
+    // A speaker change ends the cue before length or punctuation would, so one cue never mixes
+    // two people — which is what makes the label on it true rather than approximately true.
+    if (group.length && speakerLabel(token) !== speakerLabel(group.at(-1)!)) flush();
     group.push(token);
     const text = group.map((item) => item.text).join("").trim();
     const duration = token.end_ms! - group[0].start_ms!;
@@ -117,8 +140,15 @@ export function tokensToSubtitleCues(tokens: SonioxToken[]) {
   return cues;
 }
 
+/**
+ * Translated projects are attributed but *not* re-split on a speaker change, unlike the original
+ * track above. Cue boundaries here come from Soniox's own original/translation token runs, and
+ * flushing early on a speaker change would drop original tokens that have no translation yet —
+ * losing subtitle text to gain a label is the wrong trade. A cue that really does span two
+ * speakers therefore carries the first one, and is corrected in the editor like any other cue.
+ */
 export function tokensToBilingualCues(tokens: SonioxToken[]) {
-  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; translated_text: string; words: Array<{ text: string; start_ms: number; end_ms: number }> }> = [];
+  const cues: Array<{ cue_index: number; start_ms: number; end_ms: number; text: string; translated_text: string; speaker: string | null; words: Array<{ text: string; start_ms: number; end_ms: number }> }> = [];
   let original: SonioxToken[] = [];
   let translation: SonioxToken[] = [];
 
@@ -131,6 +161,7 @@ export function tokensToBilingualCues(tokens: SonioxToken[]) {
       end_ms: Math.max(original[0].start_ms! + 1, original.at(-1)!.end_ms!),
       text: original.map((token) => token.text).join("").trim(),
       translated_text: translatedText,
+      speaker: speakerLabel(original[0]),
       words: original.map((token) => ({ text: token.text, start_ms: token.start_ms!, end_ms: token.end_ms! })),
     });
     original = [];

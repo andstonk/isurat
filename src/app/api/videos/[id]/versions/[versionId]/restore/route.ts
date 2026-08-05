@@ -46,6 +46,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         translated_text: cue.translated_text?.trim() || null,
         words: cue.words ?? null,
         style_override: cue.style_override ?? null,
+        speaker: cue.speaker?.trim() || null,
       })));
       if (insertError) throw insertError;
     }

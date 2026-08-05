@@ -33,6 +33,7 @@ supabase/migrations/006_add_advanced_subtitle_styles.sql
 supabase/migrations/007_add_error_logs.sql
 supabase/migrations/009_add_collaboration.sql
 supabase/migrations/010_raise_upload_ceiling.sql
+supabase/migrations/011_add_speaker_labels.sql
 ```
 
 See `MIGRATIONS.md` for the validation checklist to follow whenever a new migration is added.
